@@ -1,0 +1,563 @@
+/* ============================================================================
+   Asistente Admin — estilos custom shadcn-inspired
+   Se carga sobre SQLAdmin para darle apariencia moderna consistente con
+   /admin/dashboard y /admin/chats.
+   ========================================================================== */
+
+:root {
+  /* ── Vars shadcn (compartidas con dashboard) ────────────────────────── */
+  --bg-canvas: #F7F7F8;
+  --bg-card: #FFFFFF;
+  --border: #EAEAEC;
+  --border-subtle: #F0F0F1;
+  --text-primary: #1A1A1A;
+  --text-secondary: #6B7280;
+  --text-tertiary: #9CA3AF;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.04);
+  --chip-orange: #EA580C;
+  --chip-orange-bg: rgba(234,88,12,.12);
+
+  /* ── Vars legacy de Tabler (mantengo para no romper estilos abajo) ── */
+  --color-bg: var(--bg-canvas);
+  --color-surface: var(--bg-card);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-subtle);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: #374151;
+  --color-text-muted: var(--text-secondary);
+  --color-text-disabled: var(--text-tertiary);
+  --color-brand: #111827;
+  --color-link: #1d4ed8;
+  --color-link-soft: #eff6ff;
+  --color-success: #065f46;
+  --color-success-bg: #d1fae5;
+  --color-success-dot: #10b981;
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+  --sidebar-bg: #1a1f2e;
+}
+
+[data-theme="dark"] {
+  --bg-canvas: #09090B;
+  --bg-card: #18181B;
+  --border: #27272A;
+  --border-subtle: #1F1F23;
+  --text-primary: #FAFAFA;
+  --text-secondary: #A1A1AA;
+  --text-tertiary: #71717A;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.3);
+  --color-bg: #09090B;
+  --color-surface: #18181B;
+  --color-border: #27272A;
+  --color-text-primary: #FAFAFA;
+  --color-text-muted: #A1A1AA;
+}
+
+/* ── Custom header sticky (inyectado por JS en TODAS las páginas admin) ── */
+#custom-admin-header {
+  position: sticky; top: 0; z-index: 1000;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  padding: 10px 24px;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+#custom-admin-header .cah-inner {
+  display: flex; align-items: center; gap: 24px;
+  max-width: 1400px; margin: 0 auto;
+}
+#custom-admin-header .cah-brand {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; color: var(--text-primary);
+}
+#custom-admin-header .cah-logo {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--chip-orange-bg); color: var(--chip-orange);
+  display: grid; place-items: center; font-weight: 700; font-size: 13px;
+}
+#custom-admin-header .cah-name {
+  font-weight: 600; font-size: 13.5px; color: var(--text-primary);
+}
+#custom-admin-header .cah-nav {
+  display: flex; gap: 4px; flex: 1;
+}
+#custom-admin-header .cah-nav a {
+  padding: 6px 12px; border-radius: 8px;
+  text-decoration: none; color: var(--text-secondary);
+  font-size: 13px; font-weight: 500;
+}
+#custom-admin-header .cah-nav a:hover { background: var(--border-subtle); color: var(--text-primary); }
+#custom-admin-header .cah-btn {
+  padding: 6px 12px; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text-primary); font-size: 12.5px; font-weight: 500;
+  cursor: pointer; font-family: inherit;
+}
+#custom-admin-header .cah-btn:hover { background: var(--border-subtle); }
+
+/* En modo dark, ajustar también los elementos de SQLAdmin a oscuro */
+[data-theme="dark"] body, [data-theme="dark"] .page-wrapper { background: var(--bg-canvas) !important; }
+[data-theme="dark"] .card, [data-theme="dark"] .table, [data-theme="dark"] .form-control,
+[data-theme="dark"] .sidebar-content, [data-theme="dark"] .navbar {
+  background: var(--bg-card) !important; color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .table th, [data-theme="dark"] .table td {
+  background: var(--bg-card) !important; color: var(--text-primary) !important;
+  border-color: var(--border-subtle) !important;
+}
+[data-theme="dark"] a { color: #60A5FA; }
+
+/* ── Reset general ─────────────────────────────────────────────────────── */
+
+body,
+.page,
+.page-wrapper {
+  background: var(--color-bg) !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  color: var(--color-text-secondary);
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Sidebar (navbar-vertical) ─────────────────────────────────────────── */
+
+.navbar-vertical,
+.navbar-vertical.navbar-expand-lg {
+  background: var(--sidebar-bg) !important;
+  border-right: none !important;
+}
+
+.navbar-vertical .navbar-brand {
+  padding: 18px 16px;
+  font-weight: 700;
+  color: #ffffff !important;
+  font-size: 15px;
+}
+
+.navbar-vertical .nav-link {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  padding: 8px 14px !important;
+  border-radius: 6px !important;
+  margin: 1px 8px !important;
+  transition: all 0.15s !important;
+}
+
+.navbar-vertical .nav-link:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.navbar-vertical .nav-link.active,
+.navbar-vertical .nav-link[aria-current="page"] {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.navbar-vertical .nav-link i,
+.navbar-vertical .nav-link svg {
+  margin-right: 10px;
+  opacity: 0.8;
+}
+
+/* Categorías (Configuración, Operación, Catálogo) */
+.navbar-vertical .nav-section,
+.navbar-vertical h3,
+.navbar-vertical .nav-header {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  color: rgba(255, 255, 255, 0.35) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.8px !important;
+  padding: 14px 16px 4px !important;
+  margin: 0 !important;
+}
+
+/* Logout */
+.navbar-vertical .btn-logout,
+.navbar-vertical form button {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+  border-radius: 8px !important;
+  border: none !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 8px 16px !important;
+  margin: 8px !important;
+}
+
+.navbar-vertical .btn-logout:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+}
+
+/* ── Header de página ──────────────────────────────────────────────────── */
+
+.page-header h1,
+.page-title,
+h1.page-title {
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  color: var(--color-text-primary) !important;
+  letter-spacing: -0.3px !important;
+  margin: 0 0 16px 0 !important;
+}
+
+.page-pretitle {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: var(--color-text-muted) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.6px !important;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+}
+
+.card-header {
+  background: var(--color-surface) !important;
+  border-bottom: 1.5px solid var(--color-border-soft) !important;
+  padding: 16px 20px !important;
+}
+
+.card-title,
+.card-header h3 {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: var(--color-text-primary) !important;
+  margin: 0 !important;
+}
+
+.card-body {
+  padding: 0 !important;
+}
+
+.card-footer {
+  background: #fafafa !important;
+  border-top: 1px solid var(--color-border-soft) !important;
+  padding: 14px 20px !important;
+}
+
+/* ── Botones ───────────────────────────────────────────────────────────── */
+
+.btn-primary,
+.btn.btn-primary,
+button[type="submit"].btn-primary {
+  background: var(--color-brand) !important;
+  border: none !important;
+  border-radius: 8px !important;
+  color: #ffffff !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  padding: 8px 16px !important;
+  letter-spacing: 0.1px !important;
+  box-shadow: none !important;
+}
+
+.btn-primary:hover {
+  background: #0b1320 !important;
+}
+
+.btn-outline-primary,
+.btn-secondary,
+.btn-default {
+  background: var(--color-surface) !important;
+  border: 1.5px solid var(--color-border) !important;
+  color: var(--color-text-secondary) !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 7px 14px !important;
+}
+
+.btn-outline-primary:hover,
+.btn-secondary:hover,
+.btn-default:hover {
+  background: #f9fafb !important;
+  border-color: var(--color-text-disabled) !important;
+}
+
+.btn-danger {
+  background: var(--color-danger) !important;
+  border: none !important;
+  color: #ffffff !important;
+  border-radius: 8px !important;
+}
+
+/* Botones de acción de tabla (ver/editar/eliminar) */
+.btn-sm,
+.action-buttons .btn {
+  border-radius: 6px !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+  margin: 0 1px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+}
+
+.action-buttons a[href*="details"],
+a[title*="View"],
+a[title*="Show"] {
+  background: var(--color-link-soft) !important;
+  color: var(--color-link) !important;
+  border: none !important;
+}
+
+.action-buttons a[href*="edit"],
+a[title*="Edit"] {
+  background: var(--color-warning-bg) !important;
+  color: var(--color-warning) !important;
+  border: none !important;
+}
+
+.action-buttons a[href*="delete"],
+a[title*="Delete"],
+button.btn-danger.btn-sm {
+  background: var(--color-danger-bg) !important;
+  color: var(--color-danger) !important;
+  border: none !important;
+}
+
+/* ── Inputs y formularios ──────────────────────────────────────────────── */
+
+.form-control,
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="number"],
+input[type="password"],
+select,
+textarea {
+  border: 1.5px solid var(--color-border) !important;
+  border-radius: 8px !important;
+  padding: 8px 14px !important;
+  font-size: 13px !important;
+  background: var(--color-surface) !important;
+  color: var(--color-text-primary) !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+  box-shadow: none !important;
+}
+
+.form-control:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--color-link) !important;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.08) !important;
+  outline: none !important;
+}
+
+.form-label,
+label {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--color-text-secondary) !important;
+  letter-spacing: 0.2px !important;
+  margin-bottom: 6px !important;
+}
+
+/* ── Tabla ─────────────────────────────────────────────────────────────── */
+
+table.table,
+.table {
+  margin-bottom: 0 !important;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table thead th,
+table thead th {
+  background: #f9fafb !important;
+  color: var(--color-text-disabled) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.6px !important;
+  text-transform: uppercase !important;
+  border-bottom: 1px solid var(--color-border) !important;
+  border-top: none !important;
+  padding: 12px 16px !important;
+  white-space: nowrap;
+}
+
+.table tbody tr,
+table tbody tr {
+  transition: background 0.15s ease;
+}
+
+.table tbody tr:hover,
+table tbody tr:hover {
+  background: #f9fafb !important;
+}
+
+.table tbody td,
+table tbody td {
+  padding: 14px 16px !important;
+  vertical-align: middle !important;
+  border: none !important;
+  border-bottom: 1px solid var(--color-border-soft) !important;
+  font-size: 13.5px !important;
+  color: var(--color-text-secondary) !important;
+}
+
+/* Resaltar links en tabla (numero_whatsapp, etc.) */
+.table tbody td a {
+  color: var(--color-link) !important;
+  text-decoration: none !important;
+  font-weight: 500;
+}
+
+.table tbody td a:hover {
+  text-decoration: underline !important;
+}
+
+/* Badge para boolean true/false (activo, bloqueado, fallback) */
+.table tbody td:has(> .badge),
+.badge-true {
+  font-weight: 500;
+}
+
+/* ── Badges genéricos ──────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  padding: 4px 10px !important;
+  border-radius: 999px !important;
+  letter-spacing: 0.1px !important;
+}
+
+.badge-success,
+.bg-success,
+.bg-green {
+  background: var(--color-success-bg) !important;
+  color: var(--color-success) !important;
+}
+
+.badge-danger,
+.bg-danger,
+.bg-red {
+  background: #fee2e2 !important;
+  color: var(--color-danger) !important;
+}
+
+.badge-secondary,
+.bg-secondary {
+  background: #f3f4f6 !important;
+  color: var(--color-text-disabled) !important;
+}
+
+.badge-warning,
+.bg-warning,
+.bg-yellow {
+  background: var(--color-warning-bg) !important;
+  color: var(--color-warning) !important;
+}
+
+/* ── Paginación ────────────────────────────────────────────────────────── */
+
+.pagination .page-link {
+  border-radius: 7px !important;
+  margin: 0 2px !important;
+  border: 1.5px solid var(--color-border) !important;
+  background: var(--color-surface) !important;
+  color: var(--color-text-secondary) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 5px 11px !important;
+  transition: all 0.15s !important;
+}
+
+.pagination .page-link:hover {
+  background: #f9fafb !important;
+  border-color: var(--color-text-disabled) !important;
+}
+
+.pagination .page-item.active .page-link {
+  background: var(--color-brand) !important;
+  border-color: var(--color-brand) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+.pagination .page-item.disabled .page-link {
+  color: #d1d5db !important;
+  background: var(--color-surface) !important;
+}
+
+/* ── Showing X to Y of N items ─────────────────────────────────────────── */
+
+.dataTables_info,
+.showing-info {
+  font-size: 12.5px !important;
+  color: var(--color-text-disabled) !important;
+}
+
+/* ── Login page (cuando no estás autenticado) ──────────────────────────── */
+
+body.login-page,
+.login-container {
+  background: var(--color-bg) !important;
+}
+
+.login-container .card {
+  max-width: 400px;
+  margin: 60px auto;
+}
+
+/* SQLAdmin envuelve el input password en un .input-group input-group-flat
+   esperando un botón "mostrar contraseña" que no se renderiza. Forzamos que
+   el input ocupe todo el ancho del contenedor y elimine el border-radius
+   asimétrico de Tabler. */
+.input-group,
+.input-group-flat {
+  display: flex !important;
+  width: 100% !important;
+}
+.input-group > .form-control,
+.input-group-flat > .form-control,
+.input-group input[type="password"],
+.input-group input[type="text"] {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  border-radius: 8px !important;
+  border-top-right-radius: 8px !important;
+  border-bottom-right-radius: 8px !important;
+  border-top-left-radius: 8px !important;
+  border-bottom-left-radius: 8px !important;
+}
+
+/* ── Detalles / show page ──────────────────────────────────────────────── */
+
+dl.row dt {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: var(--color-text-disabled) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+dl.row dd {
+  font-size: 13.5px !important;
+  color: var(--color-text-primary) !important;
+  padding: 6px 0 12px 0 !important;
+  border-bottom: 1px solid var(--color-border-soft);
+}
