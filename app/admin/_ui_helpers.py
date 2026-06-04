@@ -1,7 +1,4 @@
-"""Helpers UI compartidos entre vistas del admin (chats, contactos, etc.).
-
-Sistema de diseño DTGP — ver claude-ajustes-css.md para la guía completa.
-"""
+"""Helpers UI compartidos entre vistas del admin (chats, contactos, etc.)."""
 
 from __future__ import annotations
 
@@ -96,7 +93,7 @@ def format_phone(numero: str | None) -> str:
 
 PILL_STYLES = """
 <style>
-  /* Pills de etiqueta — sistema de diseño DTGP */
+  /* Pills de etiqueta */
   .pill {
     display: inline-flex; align-items: center;
     padding: 2px 10px; border-radius: 9999px;
@@ -129,7 +126,7 @@ def pill_etiqueta(etiqueta: str | None, bloqueado: bool = False) -> str:
         return '<span class="pill pill--bloqueado">Bloqueado</span>'
     et = (etiqueta or "").lower()
     labels = {
-        "cliente": "Cliente", "prospecto": "Prospecto",
+        "cliente": "Cliente",
         "equipo": "Equipo", "personal": "Personal",
     }
     if et in labels:

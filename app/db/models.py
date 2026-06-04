@@ -41,7 +41,7 @@ class Cliente(Base):
     es_mayorista: Mapped[bool] = mapped_column(Boolean, default=False)
     bloqueado: Mapped[bool] = mapped_column(Boolean, default=False)
     razon_bloqueo: Mapped[str | None] = mapped_column(Text)
-    # Etiqueta de relación: cliente / prospecto / equipo / personal / NULL.
+    # Etiqueta de relación: cliente / equipo / personal / NULL.
     # `personal` = el bot NUNCA debe responder (contacto privado del dueño del número).
     etiqueta: Mapped[str | None] = mapped_column(String(20))
     etiqueta_actualizada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -192,16 +192,16 @@ class NumeroInterno(Base):
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# MARÍA / DTGP — modelos nuevos del vertical (Fase 2)
+# Whitelist + memoria
 # ────────────────────────────────────────────────────────────────────────────
 
 
 class ContactoWhitelist(Base):
-    """Whitelist maestra de María (reemplaza WHITELIST.md de openclaw).
+    """Whitelist maestra de contactos conocidos.
 
     Define quién es cada número conocido y con qué permisos. El routing del
     webhook consulta esta tabla: si el número está aquí (rol equipo o cliente)
-    → flujo OPERATIVO; si no → flujo PROSPECTO.
+    → flujo OPERATIVO; si no → flujo cliente normal.
     """
     __tablename__ = "contactos_whitelist"
 

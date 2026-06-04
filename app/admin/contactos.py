@@ -44,7 +44,6 @@ def _fmt_fecha(dt: datetime | None) -> str:
 ETIQUETAS = [
     ("todos", "Todos", None),
     ("cliente", "Clientes", "cliente"),
-    ("prospecto", "Prospectos", "prospecto"),
     ("equipo", "Equipo", "equipo"),
     ("personal", "Personal", "personal"),
     ("sin_clasificar", "Sin clasificar", "__NULL__"),
@@ -102,7 +101,6 @@ async def lista_contactos(
     counts_q = await session.execute(select(
         func.count().filter(Cliente.id.isnot(None)).label("total"),
         func.count().filter(Cliente.etiqueta == "cliente").label("cliente"),
-        func.count().filter(Cliente.etiqueta == "prospecto").label("prospecto"),
         func.count().filter(Cliente.etiqueta == "equipo").label("equipo"),
         func.count().filter(Cliente.etiqueta == "personal").label("personal"),
         func.count().filter(Cliente.etiqueta.is_(None)).label("sin_clasificar"),
@@ -112,7 +110,6 @@ async def lista_contactos(
     counts = {
         "todos": cr.total if cr else 0,
         "cliente": cr.cliente if cr else 0,
-        "prospecto": cr.prospecto if cr else 0,
         "equipo": cr.equipo if cr else 0,
         "personal": cr.personal if cr else 0,
         "sin_clasificar": cr.sin_clasificar if cr else 0,
@@ -192,7 +189,7 @@ async def lista_contactos(
 _CONTACTOS_TEMPLATE = """<!doctype html>
 <html lang="es" data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Contactos — Dairo</title>
+<title>Contactos — La Cantina</title>
 __SHELL_STYLES__
 __PILL_STYLES__
 <style>

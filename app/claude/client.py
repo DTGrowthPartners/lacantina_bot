@@ -124,7 +124,7 @@ async def conversar(
         except Exception as e:
             log.exception("claude.api_fail", error=str(e), ronda=ronda)
             # NO enviar mensaje al cliente — al cliente no le importa el error.
-            # 1) Notificar al grupo EQUIPO DTGP para que atiendan manualmente.
+            # 1) Notificar al grupo del equipo para que atiendan manualmente.
             # 2) Registrar alerta en BD para que aparezca en /admin/alerta-fabio.
             cliente_n = ctx.get("cliente_numero", "?") if isinstance(ctx, dict) else "?"
             cliente_id_ctx = ctx.get("cliente_id") if isinstance(ctx, dict) else None

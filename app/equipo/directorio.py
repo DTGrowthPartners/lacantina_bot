@@ -133,9 +133,8 @@ def superior_para(area: str | None = None) -> Miembro | None:
 def superiores_para(area: str | None = None) -> list[Miembro]:
     """TODOS los miembros que deben recibir notificación para un área.
 
-    Política dueño 2026-05-16: notificar a TODOS los admins (Fabio y Stiven)
-    en paralelo, no solo al primero. Caso real: pedido #21 solo llegó a
-    Stiven porque la lógica anterior elegía un único fallback.
+    Notifica a TODOS los miembros fallback en paralelo (no solo al primero),
+    para que cualquiera del equipo disponible pueda atender.
     """
     _cargar_si_caducado()
     miembros: list[Miembro] = _cache["miembros"]

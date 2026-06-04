@@ -818,7 +818,7 @@ async def webhook(
             )
             if es_grupo_equipo:
                 miembro = es_miembro_equipo(msg.from_number)
-                # CASO especial: el operador físico (Dairo/Stiven/Edgardo) escribió
+                # CASO especial: el operador físico (Fabio/Edgardo) escribió
                 # en el grupo desde la app de WhatsApp del CELULAR del bot.
                 # whapi marca eso como from_me=true source=mobile (is_from_human).
                 # No es eco de la API (eso sería is_from_bot). Necesitamos
@@ -876,10 +876,10 @@ async def webhook(
             resultados.append({"id": msg.id, "status": "evento_sin_contenido_ignorado"})
             continue
 
-        # 🚨 PRIORIDAD 1.8 — Self-chat: Dairo desde el celular del bot abre
+        # 🚨 PRIORIDAD 1.8 — Self-chat: el operador desde el celular del bot abre
         # "Mensaje a ti mismo" y le escribe a Claude. whapi lo reporta con
         # chat_id = <numero_bot>@s.whatsapp.net y from_me=true.
-        # - source=mobile/web (is_from_human) → es Dairo escribiendo manual →
+        # - source=mobile/web (is_from_human) → es el operador escribiendo manual →
         #   procesar como mensaje del equipo, responder al MISMO self-chat.
         # - source=api (is_from_bot) → es eco del bot enviando respuesta →
         #   ya se filtra abajo en `is_from_bot`, no entra aquí.
@@ -908,11 +908,11 @@ async def webhook(
             log.warning("webhook.self_chat.sin_miembro_fallback")
 
         # 🚨 PRIORIDAD 2 — Outbound desde el celular humano (no del bot API).
-        # Si Dairo (o quien tenga el celular) escribe directamente desde la app
+        # Si el operador (o quien tenga el celular) escribe directamente desde la app
         # móvil, whapi lo marca con source=mobile/web. Debe persistirse como
         # `direccion=humano` (no inbound) y, por defecto, pausar el bot 1h.
         # EXCEPCIÓN: mensajes en grupos los maneja el routing de grupos (más
-        # abajo), no este bloque — sino Dairo no podría hablarle al bot desde
+        # abajo), no este bloque — sino el operador no podría hablarle al bot desde
         # el grupo EQUIPO CANTINA.
         if msg.is_from_human and not (msg.chat_id and msg.chat_id.endswith("@g.us")):
             es_metadato = (
@@ -984,7 +984,7 @@ async def webhook(
         # ¿Es un CLIENTE whitelisted? → flujo operativo con permisos scoped (rol=cliente)
         cliente_wl = whitelist_cliente(msg.from_number)
         if cliente_wl:
-            # Modo global "solo_prospectos" o "off" → silenciar también a la WL.
+            # Modo global "off" → silenciar también a la WL (clientes).
             if await _bot_bloqueado_para_whitelist():
                 if cli_id_pre is not None:
                     await guardar_conversacion(
@@ -1060,7 +1060,7 @@ async def webhook(
 
         # KILL SWITCH: el admin pausó al bot globalmente. No procesamos
         # mensajes de clientes, solo los persistimos para no perder historia.
-        # Bot equipo (Fabio/Stiven) ya pasó la condición arriba, así que ellos
+        # Bot equipo (Fabio/Edgardo) ya pasó la condición arriba, así que ellos
         # SÍ pueden seguir hablando con el bot (incluso para reactivarlo).
         if await _bot_global_pausado():
             cliente = await get_or_create_cliente(session, msg.from_number, nombre=msg.from_name)
@@ -1090,7 +1090,7 @@ async def webhook(
             continue
 
         # ── Silencio TOTAL si está etiquetado como personal ──────────────────
-        # (Caso clave del canal de Dairo: contactos privados nunca obtienen bot.)
+        # (Caso clave del canal de el operador: contactos privados nunca obtienen bot.)
         if cliente.etiqueta == "personal":
             await guardar_conversacion(
                 session, cliente_id=cliente.id, direccion="inbound",
@@ -1129,7 +1129,7 @@ async def webhook(
             )).first()
             if not ya_hay:
                 from app.notif_equipo import notificar_equipo_con_botones, notificar_equipo
-                # Enviar alerta con botones (Prospecto / Personal / Ignorar) al
+                # Enviar alerta con botones (Cliente / Personal / Ignorar) al
                 # grupo. Al clickear, llega un mensaje texto al grupo citando
                 # esta alerta → el routing del grupo ejecuta la acción.
                 body_alerta = (
@@ -1141,9 +1141,9 @@ async def webhook(
                     body=body_alerta,
                     header=f"🔔 Sin clasificar",
                     botones=[
-                        ("clasif:prospecto", "Prospecto"),
-                        ("clasif:personal",  "Personal"),
-                        ("clasif:ignorar",   "Ignorar"),
+                        ("clasif:cliente",  "Cliente"),
+                        ("clasif:personal", "Personal"),
+                        ("clasif:ignorar",  "Ignorar"),
                     ],
                 )
                 whapi_id_alerta = None
@@ -1153,7 +1153,7 @@ async def webhook(
                 if not whapi_id_alerta:
                     await notificar_equipo(
                         f"🔔 *Número sin clasificar*\n\n{body_alerta}\n\n"
-                        f"_Responde 'prospecto' / 'personal' / 'ignorar' citando este mensaje._"
+                        f"_Responde 'cliente' / 'personal' / 'ignorar' citando este mensaje._"
                     )
                 await registrar_alerta_fabio(
                     session, tipo="pide_humano",
@@ -1216,9 +1216,8 @@ async def webhook(
 
 # Kill switch global: cache de 5s para no hacer query por cada webhook.
 # `modo` puede ser:
-#   - 'todos'           → bot responde a equipo + whitelist + prospectos (default)
-#   - 'solo_prospectos' → solo equipo + prospectos. Whitelist (clientes) silenciado.
-#   - 'off'             → solo equipo. Todo lo demás silenciado.
+#   - 'todos' → bot responde a clientes y equipo (default)
+#   - 'off'   → solo equipo. Clientes silenciados.
 _bot_estado_cache: dict[str, Any] = {"activo": True, "modo": "todos", "checked_at": 0.0}
 
 
@@ -1235,7 +1234,7 @@ async def _refrescar_bot_estado() -> tuple[bool, str]:
                 "SELECT activo, COALESCE(modo, 'todos') FROM bot_estado WHERE id=1"
             ))).first()
         activo = bool(row[0]) if row else True
-        modo = (row[1] if row and row[1] in ("todos", "solo_prospectos", "off") else "todos")
+        modo = (row[1] if row and row[1] in ("todos", "off") else "todos")
         _bot_estado_cache["activo"] = activo
         _bot_estado_cache["modo"] = modo
         _bot_estado_cache["checked_at"] = now
@@ -1246,7 +1245,7 @@ async def _refrescar_bot_estado() -> tuple[bool, str]:
 
 
 async def _bot_global_pausado() -> bool:
-    """¿Está pausado el bot globalmente para CLIENTES/PROSPECTOS?
+    """¿Está pausado el bot globalmente para CLIENTES?
 
     True si modo='off' o si activo=False. El routing del equipo se chequea
     aparte y no se ve afectado.
@@ -1258,7 +1257,7 @@ async def _bot_global_pausado() -> bool:
 async def _bot_bloqueado_para_whitelist() -> bool:
     """True si el modo actual silencia a los clientes de la whitelist."""
     activo, modo = await _refrescar_bot_estado()
-    return (not activo) or (modo in ("solo_prospectos", "off"))
+    return (not activo) or (modo == "off")
 
 
 # Locks por cliente_id — serializan mensajes del mismo cliente para evitar
@@ -1368,7 +1367,7 @@ async def _resolver_click_alerta(
     """Detecta y ejecuta clicks de botones quick-reply en alertas del bot.
 
     Cuando alguien clickea un botón en una alerta del grupo equipo, WhatsApp
-    envía un mensaje normal con el TEXTO del botón ("Prospecto", "Personal",
+    envía un mensaje normal con el TEXTO del botón ("Cliente", "Personal",
     etc.) citando el mensaje original con `quoted_message_id`. Si ese quoted
     matchea una `alertas_fabio.whapi_message_id`, sabemos qué cliente acción
     aplicar.
@@ -1394,9 +1393,7 @@ async def _resolver_click_alerta(
 
     # Mapear texto del botón → acción
     accion = None
-    if "prospecto" in texto:
-        accion = "etiquetar:prospecto"
-    elif "personal" in texto:
+    if "personal" in texto:
         accion = "etiquetar:personal"
     elif "cliente" in texto:
         accion = "etiquetar:cliente"

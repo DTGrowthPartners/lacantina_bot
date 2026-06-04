@@ -212,7 +212,7 @@ def _burbuja_html(m: Conversacion, cliente_initial: str = "?") -> str:
             else:
                 avatar_text = "D"
                 avatar_cls = "msg-avatar msg-avatar-bot"
-                autor_txt = "Dairo"
+                autor_txt = "Bot"
 
     contenido_texto = (m.contenido or "").strip()
     contenido_html = html.escape(contenido_texto).replace("\n", "<br>") if contenido_texto else ""
@@ -523,8 +523,7 @@ async def chat_cliente(
     etiqueta = (cliente.etiqueta or "").lower()
     etiqueta_label = {
         "cliente": "Cliente",
-        "prospecto": "Prospecto",
-        "equipo": "Equipo DTGP",
+        "equipo": "Equipo",
         "personal": "Personal",
     }.get(etiqueta, "")
     if etiqueta_label:
@@ -566,36 +565,36 @@ async def chat_cliente(
         header_pause_chip = f'<span class="h-pause-chip" title="{title_attr}">{chip_text}</span>'
         pause_sub_chip = f' · <span class="pause-sub">⏸ {html.escape(sub_text)}</span>'
         header_pause_actions = f"""
-          <form method="POST" action="/admin/actions/cliente/{cliente_id}/reactivar-laura" style="margin:0;">
-            <button type="submit" class="h-btn success" title="Reactivar Dairo — si hay un mensaje del cliente sin responder, lo procesará al instante">{_ico_play}</button>
+          <form method="POST" action="/admin/actions/cliente/{cliente_id}/reactivar-bot" style="margin:0;">
+            <button type="submit" class="h-btn success" title="Reactivar el bot — si hay un mensaje del cliente sin responder, lo procesará al instante">{_ico_play}</button>
           </form>"""
     else:
         _ico_retry = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>'
         header_pause_actions = f"""
           <button type="button" id="btn-reintentar" class="h-btn" title="Bot toma el relevo: lee el chat completo, quita la pausa si la hay y le responde al cliente">{_ico_retry}</button>
-          <form method="POST" action="/admin/actions/cliente/{cliente_id}/pausar-laura" style="margin:0;">
-            <button type="submit" class="h-btn" title="Pausar Dairo 1 h">{_ico_pause}</button>
+          <form method="POST" action="/admin/actions/cliente/{cliente_id}/pausar-bot" style="margin:0;">
+            <button type="submit" class="h-btn" title="Pausar el bot 1 h">{_ico_pause}</button>
           </form>
           <form method="POST" action="/admin/actions/cliente/{cliente_id}/pausar-indefinido" style="margin:0;"
-                onsubmit="return confirm('¿Pausar Dairo INDEFINIDAMENTE en este chat? Solo se reactiva manualmente.');">
-            <button type="submit" class="h-btn danger" title="Pausar Dairo definitivamente (hasta reactivar manualmente)">{_ico_power}</button>
+                onsubmit="return confirm('¿Pausar el bot INDEFINIDAMENTE en este chat? Solo se reactiva manualmente.');">
+            <button type="submit" class="h-btn danger" title="Pausar el bot definitivamente (hasta reactivar manualmente)">{_ico_power}</button>
           </form>"""
     # Ya no usamos el banner gigante; se mantiene la variable vacía por compatibilidad.
     pausa_banner = ""
 
     flash = ""
     if request.query_params.get("msg") == "sent_ok":
-        flash = '<div class="flash">Mensaje enviado. Dairo queda pausada 1 hora para que tú manejes la conversación.</div>'
+        flash = '<div class="flash">Mensaje enviado. El bot queda pausado 1 hora para que tú manejes la conversación.</div>'
     elif request.query_params.get("msg") == "reactivado":
-        flash = '<div class="flash">Dairo reactivada. No había mensaje pendiente — responderá al próximo del cliente.</div>'
+        flash = '<div class="flash">El bot quedó reactivado. No había mensaje pendiente — responderá al próximo del cliente.</div>'
     elif request.query_params.get("msg") == "reactivando":
-        flash = '<div class="flash">Dairo reactivada. Procesando el último mensaje del cliente — la respuesta llega en segundos.</div>'
+        flash = '<div class="flash">El bot quedó reactivado. Procesando el último mensaje del cliente — la respuesta llega en segundos.</div>'
     elif request.query_params.get("msg") == "marcado_interno":
         flash = '<div class="flash">Número marcado como interno. El bot ya no le responderá. Pausa de 24h aplicada para cancelar respuestas pendientes.</div>'
     elif request.query_params.get("msg") == "pausado":
-        flash = '<div class="flash">Dairo pausada 1h en este chat. No responderá hasta que la reactives o pase la hora.</div>'
+        flash = '<div class="flash">El bot quedó pausado 1h en este chat. No responderá hasta que la reactives o pase la hora.</div>'
     elif request.query_params.get("msg") == "pausado_indef":
-        flash = '<div class="flash">Dairo pausada INDEFINIDAMENTE en este chat. Solo se reactiva cuando lo hagas manualmente.</div>'
+        flash = '<div class="flash">El bot quedó pausado INDEFINIDAMENTE en este chat. Solo se reactiva cuando lo hagas manualmente.</div>'
 
     # El pausa banner se inyecta arriba del thread reusando el placeholder de flash
     flash = pausa_banner + flash
@@ -1509,7 +1508,6 @@ _CHATS_EXTRA_STYLES = """
   }
   .et-chip:hover { border-color: var(--c-purple); color: var(--c-purple); }
   .et-chip.active[data-value="cliente"]   { background:#D1FAE5; color:#065F46; border-color:#A7F3D0; }
-  .et-chip.active[data-value="prospecto"] { background:#FEF3C7; color:#92400E; border-color:#FDE68A; }
   .et-chip.active[data-value="equipo"]    { background:#DBEAFE; color:#1E40AF; border-color:#BFDBFE; }
   .et-chip.active[data-value="personal"]  { background:#F3F4F6; color:#374151; border-color:#D1D5DB; }
   .et-chip.active[data-value=""]          { background:#FEF2F2; color:#991B1B; border-color:#FECACA; }
@@ -1722,7 +1720,7 @@ _CHATS_EXTRA_STYLES = """
 _LISTA_TEMPLATE = """<!doctype html>
 <html lang="es" data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chats — Dairo</title>
+<title>Chats — La Cantina</title>
 __SHELL_STYLES__
 __EXTRA_STYLES__
 __PILL_STYLES__
@@ -1779,13 +1777,12 @@ __ICON_SPRITE__
     <p class="page-subtitle">{{total}} conversaciones activas · Para ver contactos importados sin conversación, abre <a href="/admin/cliente/list" style="color:var(--chip-blue);">Clientes</a>.</p>
     <div class="chat-search">
       <svg class="ico-search" width="16" height="16"><use href="#i-search"/></svg>
-      <input type="text" id="chat-filter" placeholder="Buscar por nombre o número (ej: Maria, 31550, +573...)" autofocus autocomplete="off"/>
+      <input type="text" id="chat-filter" placeholder="Buscar por nombre o número (ej: Pedro, +573...)" autofocus autocomplete="off"/>
       <span class="filter-count" id="filter-count"></span>
     </div>
     <div class="quick-filters">
       <button type="button" class="quick-chip active" data-quick="todos">Todos</button>
       <button type="button" class="quick-chip" data-quick="cliente">Clientes</button>
-      <button type="button" class="quick-chip" data-quick="prospecto">Prospectos</button>
       <button type="button" class="quick-chip" data-quick="equipo">Equipo</button>
       <button type="button" class="quick-chip" data-quick="personal">Personal</button>
       <button type="button" class="quick-chip" data-quick="sin">Sin clasificar</button>
@@ -1806,7 +1803,6 @@ __ICON_SPRITE__
   <div class="ctx-divider"></div>
   <div class="ctx-title">Etiquetar como</div>
   <div class="ctx-item" data-et="cliente"><span class="ctx-dot" style="background:#10B981"></span>Cliente</div>
-  <div class="ctx-item" data-et="prospecto"><span class="ctx-dot" style="background:#F59E0B"></span>Prospecto</div>
   <div class="ctx-item" data-et="equipo"><span class="ctx-dot" style="background:#3B82F6"></span>Equipo</div>
   <div class="ctx-item" data-et="personal"><span class="ctx-dot" style="background:#6B7280"></span>Personal</div>
   <div class="ctx-item" data-et=""><span class="ctx-dot" style="background:#EF4444"></span>Sin clasificar</div>
@@ -2199,7 +2195,7 @@ __ICON_SPRITE__
               </button>
             </div>
             <div class="composer-hint">
-              <kbd>Enter</kbd> envía · <kbd>Shift+Enter</kbd> nueva línea · <kbd>Ctrl+V</kbd> pega imagen · Dairo queda pausada 1 h tras enviar.
+              <kbd>Enter</kbd> envía · <kbd>Shift+Enter</kbd> nueva línea · <kbd>Ctrl+V</kbd> pega imagen · El bot queda pausado 1 h tras enviar.
             </div>
           </form>
         </div>
@@ -2216,7 +2212,6 @@ __ICON_SPRITE__
           <div class="cp-section-title">Etiqueta</div>
           <div class="etiqueta-picker" data-cliente="{{cliente_id}}" data-actual="{{etiqueta_value}}">
             <button type="button" class="et-chip" data-value="cliente">Cliente</button>
-            <button type="button" class="et-chip" data-value="prospecto">Prospecto</button>
             <button type="button" class="et-chip" data-value="equipo">Equipo</button>
             <button type="button" class="et-chip" data-value="personal">Personal</button>
             <button type="button" class="et-chip" data-value="">Sin clasificar</button>

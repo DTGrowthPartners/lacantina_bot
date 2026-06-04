@@ -4,7 +4,7 @@ Los tags son etiquetas LIBRES que el equipo asigna a clientes para hacer
 seguimiento (p.ej. "propuesta enviada", "falta agendar", "reunión hecha").
 
 Son independientes de `cliente.etiqueta` (que clasifica routing del bot:
-cliente/prospecto/equipo/personal). Un cliente puede tener N tags.
+cliente/equipo/personal). Un cliente puede tener N tags.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def _normalizar_color(raw: str | None) -> str:
     raw = (raw or "").strip()
     if _HEX_RE.match(raw):
         return raw.upper()
-    return "#7C3AED"  # morado DTGP por defecto
+    return "#7C3AED"  # morado por defecto
 
 
 @router.get("", response_class=HTMLResponse)
@@ -204,7 +204,7 @@ async def borrar_etiqueta(
 _TEMPLATE = """<!doctype html>
 <html lang="es" data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Etiquetas — Dairo DTGP</title>
+<title>Etiquetas — La Cantina</title>
 __SHELL_STYLES__
 <style>
   .page-title { font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px; }

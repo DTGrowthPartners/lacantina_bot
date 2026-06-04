@@ -5,13 +5,8 @@ Se invocan desde el grupo WhatsApp del equipo. Cubren:
 - Buscar / editar / cancelar reservas
 - Marcar covers (pagado anticipado / en entrada / pendiente)
 - Crear o editar eventos del día
-- Responder en nombre del bot a un cliente puntual
 
-NOTA: en `bot_asistente` (María/DTGP) este archivo tiene MUCHO más (finanzas,
-DT-OS, cuentas de cobro, Google Sheets). Aquí se reduce a lo de mesas/eventos.
-Las "tools generales" reusables (responder_a_cliente, consultar_chat_cliente,
-marcar_alerta_resuelta, etiquetar_contacto) se pueden COPIAR DESDE
-`bot_asistente/app/claude/tools_equipo.py` sin cambios.
+Todas las tools golpean el backend de mesas (`cantina_api.py`).
 """
 
 from __future__ import annotations
@@ -134,12 +129,6 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "required": ["fecha"],
         },
     },
-    # TODO: copiar de `bot_asistente/app/claude/tools_equipo.py` las tools
-    # reusables genéricas: responder_a_cliente, consultar_chat_cliente,
-    # consultar_chats_sin_responder, marcar_numero_interno,
-    # marcar_alerta_resuelta, consultar_alertas_abiertas, etiquetar_contacto,
-    # aprender_regla / olvidar_regla, programar_recordatorio, etc.
-    # Adaptar el system prompt para el contexto de La Cantina (no DTGP).
 ]
 
 
@@ -206,7 +195,6 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "marcar_cover_en_entrada": handler_marcar_cover_en_entrada,
     "crear_evento": handler_crear_evento,
     "borrar_evento": handler_borrar_evento,
-    # TODO: añadir handlers de las tools genéricas que se copien de bot_asistente.
 }
 
 

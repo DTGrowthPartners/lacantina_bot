@@ -1,9 +1,7 @@
 """Cliente whapi para enviar mensajes (texto + media).
 
 Multi-identidad: cada tarea/handler puede setear el token activo con
-`set_token(...)` (vía contextvar). Sin set, usa el token de María (default).
-Esto permite que la misma instancia atienda el canal María y el canal Dairo
-sin reescribir cada llamada de envío.
+`set_token(...)` (vía contextvar). Sin set, usa el token configurado por defecto.
 """
 
 from __future__ import annotations
@@ -112,7 +110,7 @@ async def enviar_botones(
 
 
 async def enviar_imagen_url(numero: str, image_url: str, caption: str | None = None) -> dict[str, Any]:
-    """POST /messages/image con URL pública (CDN Shopify, etc.)."""
+    """POST /messages/image con URL pública (CDN, etc.)."""
     url = f"{settings.whapi_base_url}/messages/image"
     payload: dict[str, Any] = {"to": _to_e164(numero), "media": image_url}
     if caption:

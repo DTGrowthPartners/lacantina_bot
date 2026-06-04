@@ -1,9 +1,9 @@
-"""Memoria evolutiva de María — pilar openclaw.
+"""Memoria evolutiva del bot.
 
-María recuerda entre conversaciones: reglas que el equipo le enseñó, hechos
-sobre contactos, preferencias, etc. Estas memorias se INYECTAN al system prompt
-de cada turn según el scope (general o por contacto), y María puede agregarlas
-ella misma vía la tool `aprender_regla` cuando le dan una directiva duradera.
+El bot recuerda entre conversaciones: reglas que el equipo le enseñó, hechos
+sobre contactos, preferencias (ej. "Pedro siempre pide la mesa 12"). Estas
+memorias se INYECTAN al system prompt de cada turn según el scope (general o
+por contacto).
 
 Este módulo expone helpers asincrónicos que usan los flujos y las tools.
 """

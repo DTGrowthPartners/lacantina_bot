@@ -59,8 +59,3 @@ def por_path(path: str) -> Identidad | None:
 def principal() -> Identidad:
     """La identidad del canal principal (/webhook)."""
     return _construir()["principal"]
-
-
-# Compat: si código heredado llama `maria()`, devuelve la identidad principal.
-def maria() -> Identidad:
-    return principal()

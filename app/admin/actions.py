@@ -109,13 +109,13 @@ async def bloquear_cliente(
     return RedirectResponse(f"/admin/cliente/details/{cliente_id}", status_code=303)
 
 
-@router.post("/cliente/{cliente_id}/pausar-laura")
-async def pausar_laura_manual(
+@router.post("/cliente/{cliente_id}/pausar-bot")
+async def pausar_bot_manual(
     cliente_id: int,
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """Pausa Laura 1h para este cliente sin enviar mensaje. Toggle manual
+    """Pausa el bot 1h para este cliente sin enviar mensaje. Toggle manual
     desde la vista de chat: el admin decide que NO quiere que el bot
     responda a este cliente por un rato (tomó el chat o no quiere bot)."""
     if not _check_auth(request):
@@ -128,7 +128,7 @@ async def pausar_laura_manual(
         razon="admin pausó manualmente desde /admin/chats",
     )
     await session.commit()
-    log.info("admin.cliente.pausar_laura_manual", cliente_id=cliente_id)
+    log.info("admin.cliente.pausar_manual", cliente_id=cliente_id)
     return RedirectResponse(f"/admin/chats/{cliente_id}?msg=pausado", status_code=303)
 
 
@@ -138,7 +138,7 @@ async def pausar_indefinido(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """Pausa Dairo INDEFINIDAMENTE en este chat (hasta reactivación manual).
+    """Pausa el bot INDEFINIDAMENTE en este chat (hasta reactivación manual).
 
     Útil para casos donde el admin quiere apagar el bot en un chat hasta nuevo
     aviso (ej: tu propio número, contactos sensibles, manejo full-humano).
@@ -162,8 +162,8 @@ async def pausar_indefinido(
     return RedirectResponse(f"/admin/chats/{cliente_id}?msg=pausado_indef", status_code=303)
 
 
-@router.post("/cliente/{cliente_id}/reactivar-laura")
-async def reactivar_laura(
+@router.post("/cliente/{cliente_id}/reactivar-bot")
+async def reactivar_bot(
     cliente_id: int,
     request: Request,
     session: AsyncSession = Depends(get_session),
@@ -198,7 +198,7 @@ async def reactivar_laura(
 
     if not ultimo or ultimo.direccion != "inbound" or cliente.etiqueta == "personal":
         await session.commit()
-        log.info("admin.cliente.reactivar_laura", cliente_id=cliente_id, accion="solo_pausa")
+        log.info("admin.cliente.reactivar_bot", cliente_id=cliente_id, accion="solo_pausa")
         if _es_ajax(request):
             return {"ok": True, "msg": "Reactivado (no hay mensaje pendiente)"}
         return RedirectResponse(f"/admin/chats/{cliente_id}?msg=reactivado", status_code=303)
@@ -221,7 +221,7 @@ async def reactivar_laura(
         caption=None,
         timestamp=int(ultimo.timestamp.timestamp()) if ultimo.timestamp else 0,
         chat_id="",
-        raw={"replay": True, "from_conv_id": ultimo.id, "trigger": "reactivar-laura"},
+        raw={"replay": True, "from_conv_id": ultimo.id, "trigger": "reactivar-bot"},
         from_name=cliente.nombre,
     )
 
@@ -263,10 +263,10 @@ async def reactivar_laura(
                     await s.commit()
                 except Exception:
                     await s.rollback()
-                    log.exception("admin.reactivar.prospecto_fail", cliente_id=cliente_id)
+                    log.exception("admin.reactivar.cliente_fail", cliente_id=cliente_id)
         asyncio.create_task(_run())
 
-    log.warning("admin.cliente.reactivar_laura", cliente_id=cliente_id, accion="reactivar_y_procesar", autor=autor)
+    log.warning("admin.cliente.reactivar_bot", cliente_id=cliente_id, accion="reactivar_y_procesar", autor=autor)
     if _es_ajax(request):
         return {"ok": True, "msg": "Reactivado — el bot ya está procesando el último mensaje"}
     return RedirectResponse(f"/admin/chats/{cliente_id}?msg=reactivando", status_code=303)
@@ -361,7 +361,7 @@ async def cambiar_etiqueta(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """Cambia la etiqueta del cliente (cliente|prospecto|equipo|personal|null).
+    """Cambia la etiqueta del cliente (cliente|equipo|personal|null).
 
     Acepta form `etiqueta`. Si llega vacío o "ninguna" → NULL (sin clasificar).
     Devuelve JSON si AJAX, redirect si no.
@@ -373,7 +373,7 @@ async def cambiar_etiqueta(
     valor: str | None
     if raw in ("", "ninguna", "null", "none", "sin_clasificar"):
         valor = None
-    elif raw in ("cliente", "prospecto", "equipo", "personal"):
+    elif raw in ("cliente", "equipo", "personal"):
         valor = raw
     else:
         if _es_ajax(request):
@@ -393,12 +393,11 @@ async def cambiar_etiqueta(
     await session.commit()
     log.info("admin.cliente.etiqueta", cliente_id=cliente_id, etiqueta=valor, autor=autor)
 
-    # Si la etiqueta nueva habilita respuesta del bot (cliente/prospecto/equipo)
-    # Y el último mensaje del chat es un INBOUND sin respuesta posterior
-    # (típico: fue silenciado por política estricta cuando estaba sin clasificar),
+    # Si la etiqueta nueva habilita respuesta del bot (cliente/equipo)
+    # Y el último mensaje del chat es un INBOUND sin respuesta posterior,
     # disparar el flow correspondiente para que el bot retome la conversación.
     disparado = False
-    if valor in ("cliente", "prospecto", "equipo"):
+    if valor in ("cliente", "equipo"):
         cliente = (await session.execute(
             select(Cliente).where(Cliente.id == cliente_id)
         )).scalar_one_or_none()
@@ -453,7 +452,7 @@ async def cambiar_etiqueta(
                                 log.exception("admin.etiqueta.dispatch_equipo_fail", cliente_id=cliente_id)
                     _asyncio.create_task(_run())
                     disparado = True
-            else:  # cliente o prospecto → flow prospecto
+            else:  # cliente → flow cliente
                 from app.flows.conversation import procesar_mensaje_inbound
                 async def _run():
                     from app.db.session import async_session_factory
@@ -467,7 +466,7 @@ async def cambiar_etiqueta(
                             await s2.commit()
                         except Exception:
                             await s2.rollback()
-                            log.exception("admin.etiqueta.dispatch_prospecto_fail", cliente_id=cliente_id)
+                            log.exception("admin.etiqueta.dispatch_cliente_fail", cliente_id=cliente_id)
                 _asyncio.create_task(_run())
                 disparado = True
 
@@ -494,7 +493,7 @@ async def reintentar_respuesta(
     sin respuesta (Claude se quedó vacío después de tool, o se cayó el flow).
 
     Decide el flow según la etiqueta del cliente:
-      - prospecto / NULL  → flow conversation.procesar_mensaje_inbound
+      - cliente / NULL    → flow conversation.procesar_mensaje_inbound
       - equipo / cliente WL → flow equipo.procesar_mensaje_equipo
       - personal          → rechaza (es silencio explícito)
     """
@@ -599,7 +598,7 @@ async def reintentar_respuesta(
         asyncio.create_task(_run())
         log.warning("admin.reintentar_respuesta", cliente_id=cliente_id, flow="cliente_wl", autor=autor)
     else:
-        # Prospecto o sin clasificar
+        # Cliente o sin clasificar
         from app.flows.conversation import procesar_mensaje_inbound
         async def _run():
             from app.db.session import async_session_factory
@@ -613,9 +612,9 @@ async def reintentar_respuesta(
                     await s.commit()
                 except Exception:
                     await s.rollback()
-                    log.exception("admin.reintentar.prospecto_fail", cliente_id=cliente_id)
+                    log.exception("admin.reintentar.cliente_fail", cliente_id=cliente_id)
         asyncio.create_task(_run())
-        log.warning("admin.reintentar_respuesta", cliente_id=cliente_id, flow="prospecto", autor=autor)
+        log.warning("admin.reintentar_respuesta", cliente_id=cliente_id, flow="cliente", autor=autor)
 
     if _es_ajax(request):
         return {"ok": True, "msg": "reintentando — la respuesta llegará en segundos"}
@@ -717,17 +716,16 @@ async def cambiar_bot_modo(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """Cambia el modo global del bot: todos / solo_prospectos / off.
+    """Cambia el modo global del bot: todos / off.
 
-    - todos:            responde a equipo + prospectos + clientes WL (default)
-    - solo_prospectos:  responde solo a equipo + prospectos. Clientes WL silenciados.
-    - off:              solo equipo. Resto silenciado.
+    - todos: responde a clientes + equipo (default)
+    - off:   solo equipo. Clientes silenciados.
     """
     if not _check_auth(request):
         raise HTTPException(401)
     form = await request.form()
     modo = (form.get("modo") or "").strip().lower()
-    if modo not in ("todos", "solo_prospectos", "off"):
+    if modo not in ("todos", "off"):
         if _es_ajax(request):
             return {"ok": False, "error": "modo inválido"}
         raise HTTPException(400, "modo inválido")

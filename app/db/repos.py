@@ -120,7 +120,7 @@ async def bot_pausado_por_numero(
 
     Devuelve (pausado, cliente_id). El cliente_id puede ser None si el contacto
     aún no existe en BD. Útil para chequear pausa ANTES de rutear (al flow de
-    equipo, prospecto, etc.) sin tener que crear el cliente primero.
+    equipo, cliente, etc.) sin tener que crear el cliente primero.
     """
     stmt = (
         select(Cliente.id, IntervencionHumana.pausado_hasta)
@@ -148,7 +148,7 @@ async def estado_chat_por_numero(
 
     Devuelve (cliente_id, etiqueta, pausado_indiv).
     - cliente_id: None si el contacto aún no existe.
-    - etiqueta: 'cliente'|'prospecto'|'equipo'|'personal'|None.
+    - etiqueta: 'cliente'|'equipo'|'personal'|None.
     - pausado_indiv: True si hay intervencion_humana activa.
 
     Usado por el webhook antes de rutear: si etiqueta='personal' (el admin

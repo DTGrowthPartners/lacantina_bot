@@ -19,7 +19,7 @@ settings = get_settings()
 
 
 async def notificar_equipo(texto: str) -> bool:
-    """Envía un mensaje al grupo del equipo DTGP.
+    """Envía un mensaje al grupo del equipo de La Cantina.
 
     Devuelve True si se envió correctamente. False si falló o no hay grupo
     configurado (en cuyo caso el caller puede caer al fallback).

@@ -1,10 +1,10 @@
-"""Heartbeat dinámico (pilar openclaw).
+"""Heartbeat dinámico.
 
-Cada cierto rato (cron), Dairo "despierta", recoge el estado actual (alertas
-abiertas, recordatorios vencidos, citas próximas, chats sin responder), y le
-pide a Claude que decida UNA cosa útil que hacer — o silencio si nada amerita.
+Cada cierto rato (cron), el bot "despierta", recoge el estado actual (alertas
+abiertas, recordatorios vencidos, chats sin responder), y le pide a Claude que
+decida UNA cosa útil que hacer — o silencio si nada amerita.
 
-A diferencia de los crones fijos (reporte_ceo, etc.), aquí el AGENTE decide.
+A diferencia de los crones fijos (resumen_dia, etc.), aquí el AGENTE decide.
 Para que sea seguro:
   - Toolset ACOTADO (4 tools): atender recordatorio, notificar al equipo,
     agregar a memoria, silencio. NO tiene acceso a finanzas / Sheets / etc.
@@ -246,7 +246,7 @@ Reglas:
 
 
 async def accion_heartbeat(session: AsyncSession, params: dict) -> dict:
-    """Pilar openclaw — el agente decide qué hacer.
+    """El agente decide qué hacer (conservador por defecto).
 
     params (opcionales):
       respetar_horario: bool (default True) — si False, ignora horario nocturno.
