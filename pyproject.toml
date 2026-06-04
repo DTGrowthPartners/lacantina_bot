@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "cantina-bot"
 version = "0.1.0"
@@ -33,6 +37,9 @@ dependencies = [
     # Otros
     "python-multipart>=0.0.12",
 ]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
 
 [project.optional-dependencies]
 dev = [
