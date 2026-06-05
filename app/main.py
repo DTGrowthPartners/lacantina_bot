@@ -1275,51 +1275,40 @@ def _lock_for_cliente(cliente_id: int) -> asyncio.Lock:
 
 
 async def _drain_outbox(outbox: list[dict]) -> None:
-    """Despacha los mensajes encolados por los handlers de tools.
+    """Despacha al GRUPO DEL EQUIPO los avisos encolados por las tools del flujo
+    cliente: reserva nueva, comprobante de cover, escalación.
 
-    Se llama DESPUÉS de session.commit() — garantiza consistencia:
-    lo que sale por whapi === lo que quedó persistido en BD. Si una
-    transacción hace rollback, el outbox NO se drena → no hay mensajes
-    huérfanos a Fabio.
-
-    Falla por item no aborta el resto: cada envío se aísla y se loggea.
+    Se llama DESPUÉS de session.commit() — garantiza que lo que se avisa ===
+    lo que quedó persistido. Falla por item no aborta el resto.
     """
     if not outbox:
         return
-    alertas_enviadas: list[int] = []
+    from app.notif_equipo import notificar_equipo
     for item in outbox:
+        # Formato del flujo cliente: {tipo, mensaje, ...} → grupo del equipo.
+        mensaje = item.get("mensaje") or item.get("text")
+        if mensaje:
+            try:
+                ok = await notificar_equipo(str(mensaje))
+                if not ok:
+                    log.warning("flow.outbox.notif_no_enviado", tipo=item.get("tipo"))
+            except Exception as e:
+                log.exception("flow.outbox.fail", tipo=item.get("tipo"), error=str(e))
+            continue
+        # (Compat) formato legacy {kind, to, ...} — hoy no se usa.
         kind = item.get("kind")
         try:
             if kind == "text":
                 await enviar_texto(item["to"], item["text"])
             elif kind == "image_bytes":
                 await enviar_imagen_bytes(
-                    item["to"],
-                    item["data"],
-                    mime=item.get("mime") or "image/jpeg",
-                    caption=item.get("caption"),
+                    item["to"], item["data"],
+                    mime=item.get("mime") or "image/jpeg", caption=item.get("caption"),
                 )
             else:
-                log.warning("flow.outbox.unknown_kind", kind=kind)
-                continue
-            if item.get("alerta_id"):
-                alertas_enviadas.append(int(item["alerta_id"]))
+                log.warning("flow.outbox.unknown_item", keys=list(item.keys()))
         except Exception as e:
-            log.exception("flow.outbox.fail", kind=kind, to=item.get("to"), error=str(e))
-
-    # Marcar alertas como enviadas en una transacción aparte (la del flow ya
-    # cerró). No es crítico si esto falla — solo es metadata para Fabio.
-    if alertas_enviadas:
-        try:
-            async with async_session_factory() as session2:
-                await session2.execute(
-                    sa_update(AlertaFabio)
-                    .where(AlertaFabio.id.in_(alertas_enviadas))
-                    .values(enviado_a_fabio_en=datetime.now(timezone.utc))
-                )
-                await session2.commit()
-        except Exception:
-            log.exception("flow.outbox.mark_alertas_fail", ids=alertas_enviadas)
+            log.exception("flow.outbox.fail", kind=kind, error=str(e))
 
 
 async def _procesar_async(

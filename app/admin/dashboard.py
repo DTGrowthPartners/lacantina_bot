@@ -107,16 +107,31 @@ async def dashboard_json(
     fecha_hoy = hoy.date().isoformat()
     resumen = await cantina_api.resumen_dia(fecha_hoy)
     if isinstance(resumen, dict) and resumen.get("ok"):
-        # Aplanar escalares de primer nivel para mostrarlos como pares clave/valor
-        # sin asumir el esquema exacto del backend.
-        payload = resumen.get("data") if isinstance(resumen.get("data"), dict) else resumen
+        p = resumen.get("data") if isinstance(resumen.get("data"), dict) else resumen
+        ev = p.get("evento")
+        reservas_list = [
+            {
+                "id": r.get("id"),
+                "nombre": r.get("nombre_cliente") or "—",
+                "mesa": r.get("mesa_numero"),
+                "zona": r.get("mesa_zona"),
+                "personas": r.get("num_personas"),
+                "cover": r.get("cover_estado"),
+                "notas": (r.get("notas") or "")[:60],
+            }
+            for r in (p.get("reservas") or [])
+            if isinstance(r, dict)
+        ]
         reservas_backend = {
             "ok": True,
-            "items": [
-                {"k": k, "v": v}
-                for k, v in payload.items()
-                if k != "ok" and isinstance(v, (int, float, str, bool))
-            ],
+            "resumen": {
+                "mesas_ocupadas": p.get("mesas_ocupadas"),
+                "mesas_totales": p.get("mesas_totales"),
+                "total_personas": p.get("total_personas"),
+                "covers_pendientes": p.get("covers_pendientes"),
+                "evento": (ev.get("nombre") if isinstance(ev, dict) else None),
+            },
+            "reservas": reservas_list,
         }
     else:
         reservas_backend = {
@@ -289,6 +304,8 @@ _TEMPLATE_DASHBOARD = r"""<!doctype html>
   tbody td { padding: 12px 18px; border-bottom: 1px solid var(--border-subtle); font-size: 13.5px; }
   tbody tr:last-child td { border-bottom: none; }
   .badge-state { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; background: var(--bg-soft); color: var(--text-secondary); border: 1px solid var(--border); }
+  .cell-main { font-weight: 500; color: var(--text-primary); }
+  .cell-sub { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
   .chart-card { padding: 0; }
   .chart-canvas-wrap { padding: 18px; height: 300px; position: relative; }
   .empty { padding: 32px 18px; text-align: center; color: var(--text-tertiary); font-size: 13px; }
@@ -344,10 +361,11 @@ _TEMPLATE_DASHBOARD = r"""<!doctype html>
       <div class="card">
         <div class="card-header">
           <div class="chip blue"><svg class="ico" width="16" height="16"><use href="#i-money"/></svg></div>
-          <div class="card-title">Reservas de hoy (backend de mesas)</div>
+          <div class="card-title">Reservas de hoy</div>
+          <div id="reservas-resumen" style="margin-left:auto;font-size:12px;color:var(--text-secondary);"></div>
         </div>
         <table>
-          <thead><tr><th>Dato</th><th style="text-align:right;">Valor</th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Mesa</th><th>Pers.</th><th>Cover</th></tr></thead>
           <tbody id="reservas-body"></tbody>
         </table>
       </div>
@@ -458,13 +476,31 @@ fetch('/admin/dashboard.json').then(r => r.json()).then(d => {
   `).join('');
 
   const rb = document.getElementById('reservas-body');
+  const rsum = document.getElementById('reservas-resumen');
   const rbk = d.reservas_backend || {};
-  if (rbk.ok && rbk.items && rbk.items.length) {
-    rb.innerHTML = rbk.items.map(it => `
-      <tr><td>${esc(it.k)}</td><td style="text-align:right;font-weight:600;">${esc(it.v)}</td></tr>
-    `).join('');
+  if (rbk.ok) {
+    const s = rbk.resumen || {};
+    const partes = [];
+    if (s.mesas_ocupadas != null) partes.push(s.mesas_ocupadas + '/' + (s.mesas_totales ?? '?') + ' mesas');
+    if (s.total_personas != null) partes.push(s.total_personas + ' pers.');
+    if (s.covers_pendientes) partes.push(s.covers_pendientes + ' cover pend.');
+    if (s.evento) partes.push('🎤 ' + esc(s.evento));
+    rsum.innerHTML = partes.join(' · ');
+    const rs = rbk.reservas || [];
+    if (rs.length) {
+      rb.innerHTML = rs.map(r => `
+        <tr>
+          <td><span class="cell-main">${esc(r.nombre)}</span>${r.notas ? '<div class="cell-sub">'+esc(r.notas)+'</div>' : ''}</td>
+          <td>${r.mesa != null ? 'Mesa ' + esc(r.mesa) : '—'}${r.zona ? ' <span class="cell-sub">'+esc(r.zona)+'</span>' : ''}</td>
+          <td>${esc(r.personas ?? '')}</td>
+          <td><span class="badge-state">${esc(r.cover || 'no aplica')}</span></td>
+        </tr>`).join('');
+    } else {
+      rb.innerHTML = '<tr><td colspan="4" class="empty">No hay reservas para hoy todavía.</td></tr>';
+    }
   } else {
-    rb.innerHTML = '<tr><td colspan="2" class="empty">' + esc(rbk.error || 'Sin datos del backend de mesas.') + '</td></tr>';
+    rsum.innerHTML = '';
+    rb.innerHTML = '<tr><td colspan="4" class="empty">' + esc(rbk.error || 'Backend de mesas no disponible.') + '</td></tr>';
   }
 
   const ab = document.getElementById('alertas-body');
