@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import select
@@ -49,6 +50,25 @@ from app.whapi.parser import MensajeWhapi
 from app.identidades import Identidad, principal as _identidad_principal
 
 settings = get_settings()
+
+_DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+          "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def _bloque_fecha_actual() -> str:
+    """Bloque con la fecha/hora actual de Colombia para que el bot convierta
+    'hoy/mañana/el viernes' a YYYY-MM-DD sin inventar (incluido el año)."""
+    ahora = datetime.now(ZoneInfo(settings.tz or "America/Bogota"))
+    hoy = ahora.strftime("%Y-%m-%d")
+    manana = (ahora + timedelta(days=1)).strftime("%Y-%m-%d")
+    legible = f"{_DIAS[ahora.weekday()]} {ahora.day} de {_MESES[ahora.month - 1]} de {ahora.year}"
+    return (
+        "## FECHA Y HORA ACTUAL (Colombia / Cartagena) — ÚSALA, NO la inventes\n"
+        f"- Hoy es **{legible}**. Hora actual: {ahora.strftime('%H:%M')}.\n"
+        f"- Para las tools (formato YYYY-MM-DD): hoy = **{hoy}**, mañana = **{manana}**.\n"
+        f"- Calcula 'el viernes', 'este sábado', etc. a partir de hoy. NUNCA uses un año distinto de {ahora.year}."
+    )
 
 
 async def procesar_mensaje_inbound(
@@ -257,7 +277,10 @@ async def _construir_contexto_cliente(
     cliente pregunta por su reserva, el bot usa la tool `consultar_reserva_cliente`
     con el id. Cuando exista el endpoint, añadir aquí la query.
     """
-    lineas: list[str] = ["## LO QUE YA SÉ DEL CLIENTE (úsalo, NO vuelvas a preguntarlo)"]
+    # ── FECHA/HORA ACTUAL — crítico: sin esto el bot inventa la fecha al
+    #    convertir "hoy/mañana/el viernes" a YYYY-MM-DD para las tools. ──────
+    lineas: list[str] = [_bloque_fecha_actual(), ""]
+    lineas.append("## LO QUE YA SÉ DEL CLIENTE (úsalo, NO vuelvas a preguntarlo)")
     lineas.append(f"- Número: {cliente_numero}")
 
     cliente = (await session.execute(

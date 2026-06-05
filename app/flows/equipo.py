@@ -60,7 +60,8 @@ async def _construir_contexto(session: AsyncSession, max_alertas: int = 8) -> st
         .limit(max_alertas)
     )).all()
 
-    lineas: list[str] = []
+    from app.flows.conversation import _bloque_fecha_actual
+    lineas: list[str] = [_bloque_fecha_actual(), ""]
     lineas.append("## PENDIENTES / ALERTAS ABIERTAS")
     if not alertas_rows:
         lineas.append("(ninguna)")
