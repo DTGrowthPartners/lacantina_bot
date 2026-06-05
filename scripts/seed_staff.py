@@ -27,12 +27,12 @@ from app.db.session import async_session_factory
 
 # (numero_whatsapp, nombre, rol, tipo)  — tipo: "equipo" | "interno"
 # Los "equipo" reciben atención operativa del bot en el grupo del equipo.
-# es_fallback (recibe escalaciones) se asigna a Señor Fabio y a Stiven (abajo).
+# es_fallback (recibe escalaciones) se asigna a los roles Dueño/Administrador.
 STAFF: list[tuple[str, str, str, str]] = [
     ("+573135861776", "Señor Fabio", "Dueño", "equipo"),
+    ("+573226616509", "Mariano Mesa La Cantina", "Administrador", "equipo"),
     ("+573026444564", "Stiven (admin provisional)", "Administrador", "equipo"),
     ("+573116123189", "Edgardo", "Desarrollador / Equipo", "equipo"),
-    ("+573226616509", "Mariano Mesa La Cantina", "Admin", "interno"),
     ("+573122708650", "Santiago Giraldo Cantina", "Cantante", "interno"),
     ("+573117681858", "Alejo Palacio", "Cantante/Cajero", "interno"),
     ("+573011062354", "Diana Cantina", "Mesera", "interno"),
@@ -61,7 +61,7 @@ async def main() -> None:
                         """
                     ),
                     {"n": nombre, "w": numero, "r": rol,
-                     "fb": nombre.startswith("Señor") or "Stiven" in nombre},
+                     "fb": rol in ("Dueño", "Administrador")},
                 )
                 equipo += 1
             else:
