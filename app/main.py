@@ -23,6 +23,7 @@ from app.admin.grupos import router as grupos_router
 from app.admin.etiquetas import router as etiquetas_router
 from app.admin.dashboard import router as dashboard_router
 from app.admin.reservas import router as reservas_router
+from app.admin.estados import router as estados_router
 from app.admin.automatizaciones import router as automatizaciones_router
 from app.admin.views import ALL_VIEWS
 from app.config import get_settings
@@ -133,6 +134,7 @@ app.include_router(chats_router)
 app.include_router(contactos_router)
 app.include_router(grupos_router)
 app.include_router(etiquetas_router)
+app.include_router(estados_router)
 app.include_router(automatizaciones_router)
 
 # SQLAdmin: CRUD automático sobre todos los modelos
