@@ -15,7 +15,11 @@ mensuales y reservas de mesa por WhatsApp.
 
 ## Dirección y horarios
 
-- **Dirección:** c1 #04-41, La Concepción, Cartagena de Indias, Bolívar.
+- **Dirección:** c1 #04-41, La Concepción, Cartagena de Indias, Bolívar. **Punto de referencia: frente al Banco Popular.**
+- **Cómo llegar:** cuando el cliente pregunte por la ubicación, dónde queda, dónde
+  están ubicados o cómo llegar → dale la dirección (incluyendo el punto de
+  referencia, *frente al Banco Popular*) y llama la tool `enviar_como_llegar`
+  para mandarle el video de cómo llegar.
 - **Horarios:**
   - Lunes a Jueves: 6 pm a 3 am
   - Viernes a Domingo: 5 pm a 5 am

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -44,6 +45,7 @@ from app.whapi.client import (
     enviar_paused,
     enviar_texto,
     enviar_typing,
+    enviar_video_bytes,
     set_token as set_whapi_token,
 )
 from app.whapi.parser import MensajeWhapi
@@ -54,6 +56,29 @@ settings = get_settings()
 _DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
           "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+_VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
+
+
+async def _enviar_video_como_llegar(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
+    """Envía el video de cómo llegar al cliente (tras el texto de la dirección)."""
+    if not _VIDEO_COMO_LLEGAR.exists():
+        log.warning("flow.video_como_llegar.no_existe", path=str(_VIDEO_COMO_LLEGAR))
+        return
+    try:
+        data = _VIDEO_COMO_LLEGAR.read_bytes()
+        await enviar_video_bytes(
+            cliente_numero, data, mime="video/mp4",
+            caption="🎥 Así llegas a La Cantina Plus 🎶", filename="como-llegar.mp4",
+        )
+        await guardar_conversacion(
+            session, cliente_id=cliente_id, direccion="outbound", tipo="video",
+            contenido="[video: cómo llegar]", metadata={"media": "como_llegar"},
+        )
+        log.info("flow.video_como_llegar.enviado", cliente=cliente_numero)
+    except Exception as e:
+        log.warning("flow.video_como_llegar.fail", error=str(e))
 
 
 def _bloque_fecha_actual() -> str:
@@ -244,6 +269,11 @@ async def procesar_mensaje_inbound(
     except Exception as e:
         log.exception("flow.enviar_whapi_fail", error=str(e))
         return ctx.get("outbox", [])
+
+    # 6.5 Video "cómo llegar" — si el bot llamó la tool, lo mandamos DESPUÉS del
+    # texto (primero la dirección, luego el video).
+    if ctx.get("enviar_video_como_llegar"):
+        await _enviar_video_como_llegar(session, cliente_id, cliente_numero)
 
     # 7. Persistir outbound
     await guardar_conversacion(

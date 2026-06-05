@@ -158,6 +158,17 @@ TOOL_DEFINITIONS: list[dict] = [
         },
     },
     {
+        "name": "enviar_como_llegar",
+        "description": (
+            "Envía al cliente el VIDEO de cómo llegar a La Cantina. Úsalo cuando "
+            "pregunte por la ubicación, dónde queda, dónde están ubicados, la "
+            "dirección o cómo llegar. ADEMÁS dale la dirección por texto (con el "
+            "punto de referencia: frente al Banco Popular). Llámalo una sola vez "
+            "por conversación salvo que lo vuelva a pedir."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "escalar_a_equipo",
         "description": (
             "Avisa al equipo cuando el caso está fuera de alcance: queja, evento privado, "
@@ -291,6 +302,14 @@ async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
     return res
 
 
+async def handler_enviar_como_llegar(args: dict, ctx: dict) -> dict:
+    """Marca que hay que enviar el video de cómo llegar. El envío real lo hace el
+    flow DESPUÉS del mensaje de texto (para que llegue dirección y luego video)."""
+    ctx["enviar_video_como_llegar"] = True
+    log.info("tools.enviar_como_llegar", cliente=ctx.get("cliente_numero"))
+    return {"ok": True, "nota": "El video de cómo llegar se enviará junto con tu respuesta."}
+
+
 async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
     outbox = ctx.get("outbox")
     if isinstance(outbox, list):
@@ -317,6 +336,7 @@ HANDLERS: dict[str, Handler] = {
     "crear_reserva_sala_privada": handler_crear_reserva_sala,
     "consultar_reserva_cliente": handler_consultar_reserva_cliente,
     "registrar_comprobante_cover": handler_registrar_comprobante_cover,
+    "enviar_como_llegar": handler_enviar_como_llegar,
     "escalar_a_equipo": handler_escalar_a_equipo,
 }
 
