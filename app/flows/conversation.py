@@ -42,6 +42,7 @@ from app.utils.humanizer import (
 )
 from app.whapi.client import (
     auth_headers,
+    enviar_documento_bytes,
     enviar_paused,
     enviar_texto,
     enviar_typing,
@@ -59,6 +60,26 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 
 
 _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
+_CARTA_PDF = Path(settings.data_dir) / "media" / "Menu_La_Cantina.pdf"
+
+
+async def _enviar_carta_pdf(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
+    """Envía la carta/menú en PDF al cliente (tras el texto)."""
+    if not _CARTA_PDF.exists():
+        log.warning("flow.carta_pdf.no_existe", path=str(_CARTA_PDF))
+        return
+    try:
+        await enviar_documento_bytes(
+            cliente_numero, _CARTA_PDF.read_bytes(), mime="application/pdf",
+            filename="Menu_La_Cantina.pdf", caption="🍾 Nuestra carta 🎶",
+        )
+        await guardar_conversacion(
+            session, cliente_id=cliente_id, direccion="outbound", tipo="pdf",
+            contenido="[carta: Menu_La_Cantina.pdf]", metadata={"media": "carta_pdf"},
+        )
+        log.info("flow.carta_pdf.enviado", cliente=cliente_numero)
+    except Exception as e:
+        log.warning("flow.carta_pdf.fail", error=str(e))
 
 
 async def _enviar_video_como_llegar(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
@@ -270,10 +291,11 @@ async def procesar_mensaje_inbound(
         log.exception("flow.enviar_whapi_fail", error=str(e))
         return ctx.get("outbox", [])
 
-    # 6.5 Video "cómo llegar" — si el bot llamó la tool, lo mandamos DESPUÉS del
-    # texto (primero la dirección, luego el video).
+    # 6.5 Adjuntos pedidos por el bot (tras el texto): video de cómo llegar / carta PDF.
     if ctx.get("enviar_video_como_llegar"):
         await _enviar_video_como_llegar(session, cliente_id, cliente_numero)
+    if ctx.get("enviar_carta_pdf"):
+        await _enviar_carta_pdf(session, cliente_id, cliente_numero)
 
     # 7. Persistir outbound
     await guardar_conversacion(

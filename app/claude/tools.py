@@ -169,6 +169,16 @@ TOOL_DEFINITIONS: list[dict] = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "enviar_carta",
+        "description": (
+            "Envía al cliente la CARTA/MENÚ en PDF. Úsalo cuando pregunte por "
+            "bebidas, tragos, licores, comida, la carta o el menú. Acompáñalo con "
+            "un mensaje breve (puedes mencionar 1-2 opciones del menú o invitar a "
+            "verla). Llámalo una sola vez por conversación salvo que lo vuelva a pedir."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "escalar_a_equipo",
         "description": (
             "Avisa al equipo cuando el caso está fuera de alcance: queja, evento privado, "
@@ -310,6 +320,13 @@ async def handler_enviar_como_llegar(args: dict, ctx: dict) -> dict:
     return {"ok": True, "nota": "El video de cómo llegar se enviará junto con tu respuesta."}
 
 
+async def handler_enviar_carta(args: dict, ctx: dict) -> dict:
+    """Marca que hay que enviar la carta/menú en PDF (tras el texto)."""
+    ctx["enviar_carta_pdf"] = True
+    log.info("tools.enviar_carta", cliente=ctx.get("cliente_numero"))
+    return {"ok": True, "nota": "La carta en PDF se enviará junto con tu respuesta."}
+
+
 async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
     outbox = ctx.get("outbox")
     if isinstance(outbox, list):
@@ -337,6 +354,7 @@ HANDLERS: dict[str, Handler] = {
     "consultar_reserva_cliente": handler_consultar_reserva_cliente,
     "registrar_comprobante_cover": handler_registrar_comprobante_cover,
     "enviar_como_llegar": handler_enviar_como_llegar,
+    "enviar_carta": handler_enviar_carta,
     "escalar_a_equipo": handler_escalar_a_equipo,
 }
 
