@@ -30,7 +30,9 @@ class Cliente(Base):
     __tablename__ = "clientes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    numero_whatsapp: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    # 32 chars: caben números E.164 y también group_id de WhatsApp (…@g.us, 23 ch)
+    # para representar el grupo del equipo como un "chat" en el admin.
+    numero_whatsapp: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     nombre: Mapped[str | None] = mapped_column(String(255))
     cedula: Mapped[str | None] = mapped_column(String(20))
     email: Mapped[str | None] = mapped_column(String(120))

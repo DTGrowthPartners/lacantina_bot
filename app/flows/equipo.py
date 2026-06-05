@@ -38,6 +38,18 @@ settings = get_settings()
 
 _client = get_anthropic_client()
 
+
+async def _nombre_grupo(group_id: str) -> str:
+    """Nombre legible de un grupo (best-effort vía whapi). Fallback genérico."""
+    try:
+        from app.whapi.client import listar_grupos
+        for g in await listar_grupos(count=100):
+            if str(g.get("id")) == group_id:
+                return (g.get("name") or g.get("subject") or "Grupo equipo")[:120]
+    except Exception as e:
+        log.debug("flow_equipo.nombre_grupo_fail", error=str(e))
+    return "Grupo equipo"
+
 # Costos aproximados (mismos que client.py)
 PRECIO_INPUT = Decimal("3.00") / Decimal("1000000")
 PRECIO_OUTPUT = Decimal("15.00") / Decimal("1000000")
@@ -154,26 +166,40 @@ async def procesar_mensaje_equipo(
 
     log.info("flow_equipo.inbound", miembro=miembro.nombre, preview=instruccion[:100])
 
-    # Persistir el inbound del admin para que aparezca en /admin/chats.
-    # Auto-crea un "cliente" con el número del admin (ya bloqueado por la
-    # lógica de webhook para que no se procese como cliente normal).
-    cliente_proxy = await get_or_create_cliente(session, miembro.numero_whatsapp)
-    if not cliente_proxy.nombre:
-        # Bautizar con el nombre del miembro
-        await session.execute(
-            update(Cliente).where(Cliente.id == cliente_proxy.id).values(
-                nombre=f"[ADMIN] {miembro.nombre}"
+    # Persistir el inbound para que aparezca en /admin/chats.
+    # En el GRUPO del equipo lo guardamos bajo un "cliente grupo" (número =
+    # group_id@g.us) → el grupo se ve como UN solo chat y se puede responder
+    # desde /admin/chats (el envío va al group_id). Fuera del grupo (self-chat
+    # del operador / cliente WL), bajo el número del miembro.
+    es_grupo = bool(responder_a and responder_a.endswith("@g.us"))
+    if es_grupo:
+        cliente_proxy = await get_or_create_cliente(session, responder_a)
+        if not (cliente_proxy.nombre or "").strip():
+            await session.execute(
+                update(Cliente).where(Cliente.id == cliente_proxy.id).values(
+                    nombre=await _nombre_grupo(responder_a), etiqueta="equipo",
+                )
             )
-        )
+        # Prefijo con el autor para que en el chat se lea "Fabio: ..."
+        contenido_persistir = f"{miembro.nombre}: {msg.texto}" if (msg.texto or "").strip() else msg.texto
+    else:
+        cliente_proxy = await get_or_create_cliente(session, miembro.numero_whatsapp)
+        if not (cliente_proxy.nombre or "").strip():
+            await session.execute(
+                update(Cliente).where(Cliente.id == cliente_proxy.id).values(
+                    nombre=f"[ADMIN] {miembro.nombre}"
+                )
+            )
+        contenido_persistir = msg.texto
     await guardar_conversacion(
         session,
         cliente_id=cliente_proxy.id,
         direccion="inbound",
         tipo=msg.tipo,
-        contenido=msg.texto,
+        contenido=contenido_persistir,
         whapi_message_id=msg.id,
         media_url=msg.media_url,
-        metadata={"es_equipo": True, "miembro": miembro.nombre},
+        metadata={"es_equipo": True, "miembro": miembro.nombre, "es_grupo": es_grupo},
     )
 
     # Descargar imagen si llegó (multimodal vía visión)
