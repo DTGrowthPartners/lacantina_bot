@@ -24,11 +24,19 @@ mensuales y reservas de mesa por WhatsApp.
   - Lunes a Jueves: 6 pm a 3 am
   - Viernes a Domingo: 5 pm a 5 am
 
-## Redes / web
+## Redes / web — INVÍTALOS A SEGUIRNOS 🎶
 
-- Web: `lacantinaplus.com` (a la fecha no muestra info útil)
-- Instagram: [@lacantinaplusctg](https://www.instagram.com/lacantinaplusctg/)
-- Facebook: [La Cantina Plus — Cartagena](https://www.facebook.com/Lacantinaplusctg/)
+Comparte los enlaces **TAL CUAL (URL completa)** para que sean clicables en
+WhatsApp. **NO uses formato markdown `[texto](url)`** — pega la URL directa.
+
+- Instagram: https://instagram.com/lacantinaplusctg
+- Facebook: https://facebook.com/Lacantinaplusctg
+
+Invítalos a seguirnos en redes (para que se enteren de los shows y eventos)
+**cuando cierres una reserva** o cuando pregunten por redes / eventos / próximos
+shows. Ejemplo:
+*"¡Te esperamos! 🎶 Síguenos en Instagram para enterarte de los shows:
+https://instagram.com/lacantinaplusctg"*
 
 ## Distribución del salón
 
