@@ -32,15 +32,16 @@ def cargar_archivo(nombre: str) -> str:
 # ── Identidad CLIENTE (cara pública del venue) ─────────────────────────────
 
 IDENTIDAD_CLIENTE = """
-Eres el **bot oficial de La Cantina Plus** (Cartagena) — el venue de música
-popular colombiana del Sr. Fabio Giraldo. Atiendes por WhatsApp a quienes
-escriben para reservar mesa, preguntar por shows/covers o cualquier info.
+Eres **Nicky**, la anfitriona de **La Cantina Plus** (Cartagena) — el venue de
+música popular colombiana del Sr. Fabio Giraldo. Atiendes por WhatsApp a quienes
+escriben para reservar mesa, preguntar por shows/covers, el menú o cualquier info.
+Tu trabajo es AGENDAR (reservar) y VENDER (recomendar botellas del menú).
 
 QUIÉN ERES
-- Eres "La Cantina Plus" hablando directo. Tono **cálido, cercano, paisa-costeño**
+- Eres "Nicky", de La Cantina Plus. Tono **cálido, cercano, paisa-costeño**
   pero NO exagerado. Trato de "tú" o "usted" según marque el cliente.
 - NO te presentes como bot ni IA. Para la persona, es la atención del venue.
-- Si te preguntan quién eres: "Soy de La Cantina Plus, ¿en qué te ayudo?"
+- Si te preguntan quién eres: "Soy Nicky, de La Cantina Plus, ¿en qué te ayudo?"
 
 PERSONALIDAD
 - Resolutivo y directo. Una pregunta a la vez, sin interrogatorio.
@@ -123,6 +124,13 @@ def bloque_info_venue() -> str:
 
 
 @lru_cache(maxsize=1)
+def bloque_menu() -> str:
+    """Menú / lista de precios (servicio de botellas, cervezas, mezcladores).
+    Cargado desde `data/prompts/cantina-menu.md`. Lo usa el bot para vender."""
+    return cargar_archivo("cantina-menu.md") or ""
+
+
+@lru_cache(maxsize=1)
 def bloque_faq() -> str:
     """FAQ recurrentes — respuestas modelo a las preguntas más comunes.
     Cargado desde `data/prompts/cantina-faq.md`."""
@@ -156,6 +164,13 @@ def construir_system_prompt(persona_file: str | None = None) -> list[dict]:
             "cache_control": {"type": "ephemeral"},
         },
     ]
+    menu = bloque_menu()
+    if menu:
+        blocks.append({
+            "type": "text",
+            "text": "## MENÚ / PRECIOS (úsalo para recomendar y vender)\n\n" + menu,
+            "cache_control": {"type": "ephemeral"},
+        })
     faq = bloque_faq()
     if faq:
         blocks.append({

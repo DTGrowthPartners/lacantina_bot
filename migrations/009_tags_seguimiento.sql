@@ -1,10 +1,10 @@
 -- ============================================================================
--- Migración 009 — Tags de seguimiento (multi-etiqueta por cliente)
+-- Migración 009 — Tags libres por cliente (multi-etiqueta)
 -- ============================================================================
--- La columna `clientes.etiqueta` (cliente/prospecto/equipo/personal) sigue
--- controlando el routing del bot. Esta migración suma una segunda capa de
--- "tags" libres para que el equipo haga seguimiento: 'propuesta enviada',
--- 'falta agendar', 'reunión hecha', etc.
+-- La columna `clientes.etiqueta` (cliente/equipo/personal) controla el routing
+-- del bot. Esta migración suma una capa de "tags" libres opcionales que el
+-- equipo puede crear desde el admin (ej. "Cliente recurrente", "VIP"). Para un
+-- bar/disco NO hay funnel de ventas, así que arranca SIN tags precargados.
 --
 -- Modelo: many-to-many entre clientes y tags.
 -- ============================================================================
@@ -32,17 +32,8 @@ CREATE TABLE IF NOT EXISTS cliente_tags (
 CREATE INDEX IF NOT EXISTS idx_cliente_tags_tag ON cliente_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_cliente_tags_cliente ON cliente_tags(cliente_id);
 
--- Seed inicial con tags útiles para el embudo de ventas DTGP.
-INSERT INTO tags (nombre, color, descripcion, orden, created_by) VALUES
-    ('Falta agendar',     '#F59E0B', 'Mostró interés pero aún no fija una cita',     10, 'seed_009'),
-    ('Cita agendada',     '#3B82F6', 'Tiene reunión programada en Cal.com',          20, 'seed_009'),
-    ('Reunión hecha',     '#10B981', 'Ya tuvimos la reunión de diagnóstico',         30, 'seed_009'),
-    ('Propuesta enviada', '#8B5CF6', 'Se le envió cotización o propuesta formal',    40, 'seed_009'),
-    ('Cerrado / ganado',  '#059669', 'Convertido a cliente activo',                  50, 'seed_009'),
-    ('Perdido',           '#6B7280', 'No avanzó · no responde · no interesado',      60, 'seed_009'),
-    ('No fit',            '#9CA3AF', 'Negocio fuera de nuestro foco / no calza',     70, 'seed_009'),
-    ('Seguir en X días',  '#EAB308', 'Marcado para retomar después',                 80, 'seed_009')
-ON CONFLICT (nombre) DO NOTHING;
+-- Sin seed: el bar no usa funnel de ventas. Si el equipo quiere tags
+-- (ej. "Cliente recurrente", "VIP", "No-show"), los crea desde /admin/etiquetas.
 
 DO $$
 DECLARE n INT;

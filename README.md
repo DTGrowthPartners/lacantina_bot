@@ -20,6 +20,7 @@ Giraldo). Atiende público que escribe pidiendo reserva, info, covers, y al
 | [`docs/DIFERENCIAS_VS_MARIA.md`](docs/DIFERENCIAS_VS_MARIA.md) | Qué se quitó/cambió/mantuvo respecto a `bot_asistente/`. |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | Cómo levantar el bot (local + VPS). |
 
+
 ---
 
 ## Stack
