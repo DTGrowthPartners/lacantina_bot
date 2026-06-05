@@ -19,6 +19,7 @@ from app.admin.actions import router as actions_router
 from app.admin.auth import AdminAuth
 from app.admin.chats import router as chats_router
 from app.admin.contactos import router as contactos_router
+from app.admin.grupos import router as grupos_router
 from app.admin.etiquetas import router as etiquetas_router
 from app.admin.dashboard import router as dashboard_router
 from app.admin.automatizaciones import router as automatizaciones_router
@@ -128,6 +129,7 @@ app.include_router(dashboard_router)
 app.include_router(actions_router)
 app.include_router(chats_router)
 app.include_router(contactos_router)
+app.include_router(grupos_router)
 app.include_router(etiquetas_router)
 app.include_router(automatizaciones_router)
 

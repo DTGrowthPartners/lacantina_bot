@@ -54,6 +54,19 @@ class WhapiError(Exception):
     pass
 
 
+async def listar_grupos(count: int = 100) -> list[dict[str, Any]]:
+    """GET /groups — grupos de WhatsApp donde está el canal del bot."""
+    url = f"{settings.whapi_base_url}/groups"
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.get(url, params={"count": count}, headers=_headers())
+        if r.status_code >= 400:
+            log.error("whapi.listar_grupos.fail", status=r.status_code, body=r.text[:200])
+            raise WhapiError(f"HTTP {r.status_code}: {r.text[:200]}")
+        data = r.json()
+    grupos = data.get("groups", data) if isinstance(data, dict) else data
+    return grupos if isinstance(grupos, list) else []
+
+
 async def enviar_texto(numero: str, texto: str) -> dict[str, Any]:
     """POST /messages/text."""
     url = f"{settings.whapi_base_url}/messages/text"
