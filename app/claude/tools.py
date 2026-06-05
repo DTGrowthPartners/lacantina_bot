@@ -16,10 +16,29 @@ ctx incluye:
 
 from __future__ import annotations
 
+import re
 from typing import Awaitable, Callable
 
 from app.integrations import cantina_api
 from app.logging_setup import log
+
+
+def _mismo_telefono(a: str | None, b: str | None) -> bool:
+    """True si dos teléfonos son el mismo número (compara solo dígitos, últimos 10).
+    Se usa para verificar que una reserva pertenece al cliente que pregunta."""
+    da = re.sub(r"\D", "", a or "")
+    db = re.sub(r"\D", "", b or "")
+    return bool(da) and bool(db) and da[-10:] == db[-10:]
+
+
+def _extraer_reserva(res: dict) -> dict:
+    """Saca el dict de la reserva de una respuesta del backend (varias formas)."""
+    if not isinstance(res, dict):
+        return {}
+    for k in ("reserva", "data"):
+        if isinstance(res.get(k), dict):
+            return res[k]
+    return res
 
 
 TOOL_DEFINITIONS: list[dict] = [
@@ -225,7 +244,23 @@ async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
 
 
 async def handler_consultar_reserva_cliente(args: dict, ctx: dict) -> dict:
-    return await cantina_api.detalle_reserva(args.get("reserva_id"))
+    """Detalle de una reserva — SOLO si es del propio número del cliente.
+
+    PRIVACIDAD: sin esta verificación, un cliente podría pedir la reserva #N de
+    otra persona y ver su nombre/teléfono. Si el teléfono de la reserva no
+    coincide con el del chat, no devolvemos datos.
+    """
+    res = await cantina_api.detalle_reserva(args.get("reserva_id"))
+    if not (isinstance(res, dict) and res.get("ok", True)):
+        return res
+    reserva = _extraer_reserva(res)
+    if not _mismo_telefono(reserva.get("telefono"), ctx.get("cliente_numero")):
+        log.warning("tools.reserva_ajena_bloqueada",
+                    reserva_id=args.get("reserva_id"), cliente=ctx.get("cliente_numero"))
+        return {"ok": False, "ajena": True,
+                "error": "Esa reserva no está a tu número. Por privacidad solo puedo darte "
+                         "información de TU propia reserva."}
+    return res
 
 
 async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
@@ -233,6 +268,15 @@ async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
     url = args.get("comprobante_url")
     if not (reserva_id and url):
         return {"ok": False, "error": "reserva_id y comprobante_url son requeridos"}
+    # Verificar que la reserva sea del cliente antes de tocarla.
+    det = await cantina_api.detalle_reserva(reserva_id)
+    if isinstance(det, dict) and det.get("ok", True):
+        reserva = _extraer_reserva(det)
+        if reserva and not _mismo_telefono(reserva.get("telefono"), ctx.get("cliente_numero")):
+            log.warning("tools.comprobante_reserva_ajena", reserva_id=reserva_id,
+                        cliente=ctx.get("cliente_numero"))
+            return {"ok": False, "error": "Esa reserva no está a tu número; no puedo "
+                                          "registrar el comprobante. Verifica el número de reserva."}
     res = await cantina_api.actualizar_reserva(reserva_id, {
         "cover_estado": "anticipado",
         "notas": f"Comprobante: {url}",

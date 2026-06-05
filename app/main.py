@@ -965,26 +965,17 @@ async def webhook(
         )
 
         # ¿Es un MIEMBRO del equipo de La Cantina escribiendo a su chat personal?
-        # POLÍTICA: el bot SOLO atiende al equipo en el grupo EQUIPO CANTINA.
-        # En chats personales del equipo → silencio (solo persistir).
-        # Si quieren operar con el bot, lo hacen en el grupo.
+        # El equipo puede operar el bot también desde su DM 1:1 (no solo en el
+        # grupo) — útil cuando no tienen el celular del grupo a mano. El bot
+        # responde al mismo chat personal con el flujo operativo (tools de
+        # reservas/eventos/covers). El veto por etiqueta=personal sigue mandando.
         miembro = es_miembro_equipo(msg.from_number)
-        if miembro:
-            cliente_id_persist = cli_id_pre
-            if cliente_id_persist is None:
-                _cli_tmp = await get_or_create_cliente(session, msg.from_number, nombre=msg.from_name)
-                cliente_id_persist = _cli_tmp.id
-            await guardar_conversacion(
-                session, cliente_id=cliente_id_persist, direccion="inbound",
-                tipo=msg.tipo, contenido=msg.texto,
-                whapi_message_id=msg.id, media_url=msg.media_url,
-                metadata={"chat_personal_silenciado": True, "miembro": miembro.nombre},
-            )
-            log.info(
-                "webhook.miembro_chat_personal_silenciado",
-                miembro=miembro.nombre, from_=msg.from_number,
-            )
-            resultados.append({"id": msg.id, "status": "team_personal_silenced"})
+        if miembro and etiqueta_pre != "personal":
+            log.info("webhook.miembro_chat_personal", miembro=miembro.nombre, from_=msg.from_number)
+            resultados.append({"id": msg.id, "status": "team_personal_routed", "miembro": miembro.nombre})
+            _track_task(asyncio.create_task(
+                _procesar_equipo_async(miembro, msg, _identidad_principal())
+            ))
             continue
 
         # ¿Es un CLIENTE whitelisted? → flujo operativo con permisos scoped (rol=cliente)
