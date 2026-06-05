@@ -456,13 +456,16 @@ fetch('/admin/dashboard.json').then(r => r.json()).then(d => {
   if (!est.activo) { btn.style.background = 'var(--accent-positive)'; btn.style.color = '#fff'; }
 
   const k = document.getElementById('kpis');
+  const resB = (d.reservas_backend && d.reservas_backend.ok && d.reservas_backend.resumen) ? d.reservas_backend.resumen : null;
+  const reservasCard = resB && resB.mesas_ocupadas != null
+    ? { chip: 'green', icon: '#i-cal', t: 'Reservas hoy', v: resB.mesas_ocupadas + ' / ' + (resB.mesas_totales != null ? resB.mesas_totales : '?'), sub: 'mesas ocupadas' }
+    : { chip: 'green', icon: '#i-cal', t: 'Reservas hoy', v: '—', sub: 'backend no disponible' };
   const cards = [
+    reservasCard,
     { chip: 'pink',   icon: '#i-messages', t: 'Chats activos hoy', v: d.conversaciones.chats_activos_hoy, sub: 'contactos únicos' },
     { chip: 'blue',   icon: '#i-bot',      t: 'Mensajes enviados',  v: d.conversaciones.outbound_hoy,      sub: 'hoy' },
     { chip: 'purple', icon: '#i-messages', t: 'Mensajes recibidos', v: d.conversaciones.inbound_hoy,       sub: 'hoy' },
     { chip: 'orange', icon: '#i-alert',    t: 'Pendientes',         v: d.alertas_pendientes,               sub: 'sin resolver' },
-    { chip: 'green',  icon: '#i-money',    t: 'Costo IA hoy',       v: '$' + Number(d.claude.costo_usd_hoy).toFixed(2), sub: 'USD' },
-    { chip: 'blue',   icon: '#i-spark',    t: 'Cache hit',          v: d.claude.cache_hit_rate_pct + '%',  sub: 'ahorro de tokens' },
   ];
   k.innerHTML = cards.map(c => `
     <div class="kpi">
