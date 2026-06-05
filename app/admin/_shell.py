@@ -328,6 +328,7 @@ def sidebar_html(active: str = "dashboard") -> str:
 
   <nav class="nav-group">
     <a class="{cls('dashboard')}" href="/admin/dashboard"><svg class="ico" width="16" height="16"><use href="#i-dashboard"/></svg> <span>Dashboard</span></a>
+    <a class="{cls('reservas')}" href="/admin/reservas"><svg class="ico" width="16" height="16"><use href="#i-cal"/></svg> <span>Reservas</span></a>
     <a class="{cls('chats')}" href="/admin/chats"><svg class="ico" width="16" height="16"><use href="#i-messages"/></svg> <span>Chats</span></a>
     <a class="{cls('contactos')}" href="/admin/contactos"><svg class="ico" width="16" height="16"><use href="#i-users"/></svg> <span>Contactos</span></a>
     <a class="{cls('etiquetas')}" href="/admin/etiquetas"><svg class="ico" width="16" height="16"><use href="#i-spark"/></svg> <span>Etiquetas</span></a>

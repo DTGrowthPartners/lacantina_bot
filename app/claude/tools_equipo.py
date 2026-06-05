@@ -52,6 +52,64 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
         },
     },
     {
+        "name": "crear_reserva",
+        "description": (
+            "Crea una reserva de UNA mesa (el equipo reserva a nombre de un "
+            "cliente). Si la fecha tiene evento con cover, el backend lo aplica. "
+            "Usa consultar_reservas_del_dia/resumen_dia antes si dudas de la mesa."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {"type": "string", "description": "YYYY-MM-DD"},
+                "mesa_id": {"type": "integer", "description": "Número de la mesa (1-42)"},
+                "nombre_cliente": {"type": "string"},
+                "telefono": {"type": "string"},
+                "num_personas": {"type": "integer"},
+                "notas": {"type": "string"},
+            },
+            "required": ["fecha", "mesa_id", "nombre_cliente", "num_personas"],
+        },
+    },
+    {
+        "name": "crear_reserva_grupo",
+        "description": (
+            "Reserva un GRUPO grande sobre varias mesas vecinas contiguas (el "
+            "backend valida contigüidad)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {"type": "string"},
+                "mesa_numeros": {"type": "array", "items": {"type": "integer"}},
+                "nombre_cliente": {"type": "string"},
+                "telefono": {"type": "string"},
+                "num_personas": {"type": "integer"},
+                "notas": {"type": "string"},
+            },
+            "required": ["fecha", "mesa_numeros", "nombre_cliente", "num_personas"],
+        },
+    },
+    {
+        "name": "crear_reserva_sala_privada",
+        "description": (
+            "Reserva una SALA PRIVADA (1 o 2). 10p, mínimo de consumo $1.000.000 "
+            "(gastable), sin cover."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {"type": "string"},
+                "sala_id": {"type": "integer", "description": "1 o 2"},
+                "nombre_cliente": {"type": "string"},
+                "telefono": {"type": "string"},
+                "num_personas": {"type": "integer"},
+                "notas": {"type": "string"},
+            },
+            "required": ["fecha", "sala_id", "nombre_cliente", "num_personas"],
+        },
+    },
+    {
         "name": "actualizar_reserva",
         "description": (
             "Edita una reserva. Cambios admitidos: cover_estado, estado, notas. "
@@ -149,6 +207,42 @@ async def handler_consultar_reserva(args: dict, ctx: dict) -> dict:
     return await cantina_api.detalle_reserva(args.get("reserva_id"))
 
 
+async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
+    payload = {k: v for k, v in {
+        "fecha": args.get("fecha"),
+        "mesa_id": args.get("mesa_id"),
+        "nombre_cliente": args.get("nombre_cliente"),
+        "telefono": args.get("telefono"),
+        "num_personas": args.get("num_personas"),
+        "notas": args.get("notas"),
+    }.items() if v is not None}
+    return await cantina_api.crear_reserva(payload)
+
+
+async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
+    payload = {k: v for k, v in {
+        "fecha": args.get("fecha"),
+        "mesa_numeros": args.get("mesa_numeros") or [],
+        "nombre_cliente": args.get("nombre_cliente"),
+        "telefono": args.get("telefono"),
+        "num_personas": args.get("num_personas"),
+        "notas": args.get("notas"),
+    }.items() if v is not None}
+    return await cantina_api.crear_reserva_grupo(payload)
+
+
+async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
+    payload = {k: v for k, v in {
+        "fecha": args.get("fecha"),
+        "sala_id": args.get("sala_id"),
+        "nombre_cliente": args.get("nombre_cliente"),
+        "telefono": args.get("telefono"),
+        "num_personas": args.get("num_personas"),
+        "notas": args.get("notas"),
+    }.items() if v is not None}
+    return await cantina_api.crear_reserva_sala(payload)
+
+
 async def handler_actualizar_reserva(args: dict, ctx: dict) -> dict:
     cambios = {k: args[k] for k in ("cover_estado", "estado", "notas") if args.get(k) is not None}
     if not cambios:
@@ -189,6 +283,9 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "consultar_reservas_del_dia": handler_consultar_reservas_del_dia,
     "resumen_dia": handler_resumen_dia,
     "consultar_reserva": handler_consultar_reserva,
+    "crear_reserva": handler_crear_reserva,
+    "crear_reserva_grupo": handler_crear_reserva_grupo,
+    "crear_reserva_sala_privada": handler_crear_reserva_sala,
     "actualizar_reserva": handler_actualizar_reserva,
     "cancelar_reserva": handler_cancelar_reserva,
     "marcar_cover_pagado": handler_marcar_cover_pagado,
