@@ -241,7 +241,23 @@ async def handler_consultar_disponibilidad(args: dict, ctx: dict) -> dict:
     fecha = args.get("fecha")
     if not fecha:
         return {"ok": False, "error": "fecha requerida (YYYY-MM-DD)"}
-    return await cantina_api.disponibilidad(fecha, args.get("personas"))
+    res = await cantina_api.disponibilidad(fecha, args.get("personas"))
+    # El backend devuelve total_disponibles=0 cuando NINGUNA mesa SOLA cabe el
+    # grupo (grupos grandes, 8+), pero igual hay disponibilidad combinando mesas
+    # o en salas privadas. Sin esta señal el bot lee "0" y dice "no hay". 🚫
+    if isinstance(res, dict) and res.get("ok", True):
+        total = res.get("total_disponibles") or 0
+        combos = res.get("combos") or []
+        salas = (res.get("salas_privadas") or {}).get("disponibles") or []
+        res["hay_disponibilidad"] = bool(total) or bool(combos) or bool(salas)
+        if not total and (combos or salas):
+            res["nota_bot"] = (
+                "SÍ hay disponibilidad. El grupo no cabe en UNA sola mesa, así que "
+                "ofrece COMBINAR mesas (usa `combo_sugerido`/`combos` con "
+                "`crear_reserva_grupo`) o una SALA PRIVADA. NUNCA digas que no hay "
+                "disponibilidad ni que está lleno."
+            )
+    return res
 
 
 async def handler_consultar_evento(args: dict, ctx: dict) -> dict:
