@@ -335,6 +335,7 @@ def sidebar_html(active: str = "dashboard") -> str:
     <a class="{cls('chats')}" href="/admin/chats"><svg class="ico" width="16" height="16"><use href="#i-messages"/></svg> <span>Chats</span></a>
     <a class="{cls('contactos')}" href="/admin/contactos"><svg class="ico" width="16" height="16"><use href="#i-users"/></svg> <span>Contactos</span></a>
     <a class="{cls('etiquetas')}" href="/admin/etiquetas"><svg class="ico" width="16" height="16"><use href="#i-spark"/></svg> <span>Etiquetas</span></a>
+    <a class="{cls('contexto')}" href="/admin/contexto"><svg class="ico" width="16" height="16"><use href="#i-settings"/></svg> <span>Contexto del bot</span></a>
     <a class="{cls('alertas')}" href="/admin/alerta-fabio/list"><svg class="ico" width="16" height="16"><use href="#i-alert"/></svg> <span>Pendientes</span></a>
   </nav>
 

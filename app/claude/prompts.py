@@ -168,6 +168,17 @@ def _bloque_identidad_archivo(nombre_archivo: str) -> str:
     return cargar_archivo(nombre_archivo) or "(no se cargó la persona alternativa)"
 
 
+def recargar_prompts() -> None:
+    """Limpia el cache de los bloques de prompt para que el bot tome de inmediato
+    el contenido nuevo de los archivos de `data/prompts/` (sin reiniciar)."""
+    for fn in (bloque_identidad_cliente, bloque_info_venue, bloque_menu,
+               bloque_faq, _bloque_identidad_archivo):
+        try:
+            fn.cache_clear()
+        except Exception:
+            pass
+
+
 def construir_system_prompt(persona_file: str | None = None) -> list[dict]:
     """System prompt para el flujo CLIENTE.
 

@@ -24,6 +24,7 @@ from app.admin.etiquetas import router as etiquetas_router
 from app.admin.dashboard import router as dashboard_router
 from app.admin.reservas import router as reservas_router
 from app.admin.eventos import router as eventos_router
+from app.admin.contexto import router as contexto_router
 from app.admin.estados import router as estados_router
 from app.admin.automatizaciones import router as automatizaciones_router
 from app.admin.views import ALL_VIEWS
@@ -131,6 +132,7 @@ app.mount(
 app.include_router(dashboard_router)
 app.include_router(reservas_router)
 app.include_router(eventos_router)
+app.include_router(contexto_router)
 app.include_router(actions_router)
 app.include_router(chats_router)
 app.include_router(contactos_router)
