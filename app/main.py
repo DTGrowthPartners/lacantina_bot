@@ -23,6 +23,7 @@ from app.admin.grupos import router as grupos_router
 from app.admin.etiquetas import router as etiquetas_router
 from app.admin.dashboard import router as dashboard_router
 from app.admin.reservas import router as reservas_router
+from app.admin.eventos import router as eventos_router
 from app.admin.estados import router as estados_router
 from app.admin.automatizaciones import router as automatizaciones_router
 from app.admin.views import ALL_VIEWS
@@ -129,6 +130,7 @@ app.mount(
 # Dashboard custom + acciones admin + chats (deben registrarse antes de SQLAdmin)
 app.include_router(dashboard_router)
 app.include_router(reservas_router)
+app.include_router(eventos_router)
 app.include_router(actions_router)
 app.include_router(chats_router)
 app.include_router(contactos_router)
@@ -486,12 +488,12 @@ def _build_admin_inject() -> str:
     text-align: left !important;
   }
   body.no-shell .card-title::before {
-    content: ""; display: block; width: 44px; height: 44px;
-    background: var(--chip-orange-bg); color: var(--chip-orange);
-    border-radius: 10px; margin-bottom: 16px;
-    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="%23EA580C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>');
-    background-repeat: no-repeat; background-position: center;
+    content: ""; display: block; width: 84px; height: 84px;
+    border-radius: 16px; margin: 0 auto 18px;
+    background-image: url('/admin-static/logo.png');
+    background-size: cover; background-repeat: no-repeat; background-position: center;
   }
+  body.no-shell .card-title { text-align: center !important; }
   body.no-shell .card-title::after {
     content: "Ingresa con tu cuenta de administrador.";
     display: block; font-size: 13px; color: var(--text-secondary);

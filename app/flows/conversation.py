@@ -43,6 +43,7 @@ from app.utils.humanizer import (
 from app.whapi.client import (
     auth_headers,
     enviar_documento_bytes,
+    enviar_imagen_bytes,
     enviar_paused,
     enviar_texto,
     enviar_typing,
@@ -61,6 +62,28 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 
 _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
 _CARTA_PDF = Path(settings.data_dir) / "media" / "Menu_La_Cantina.pdf"
+_FLYERS_DIR = Path(settings.data_dir) / "media" / "flyers"
+
+
+async def _enviar_flyer_evento(session: AsyncSession, cliente_id: int, cliente_numero: str, fecha: str) -> None:
+    """Envía el flyer del evento de una fecha (si existe), tras el texto."""
+    p = next((c for ext in (".jpg", ".jpeg", ".png", ".webp")
+              if (c := _FLYERS_DIR / f"{fecha}{ext}").exists()), None)
+    if not p:
+        return
+    try:
+        mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
+        await enviar_imagen_bytes(
+            cliente_numero, p.read_bytes(), mime=mime,
+            caption="🎟️ ¡Te esperamos en el evento! 🎶",
+        )
+        await guardar_conversacion(
+            session, cliente_id=cliente_id, direccion="outbound", tipo="imagen",
+            contenido="[flyer del evento]", metadata={"media": "flyer_evento", "fecha": fecha},
+        )
+        log.info("flow.flyer_evento.enviado", cliente=cliente_numero, fecha=fecha)
+    except Exception as e:
+        log.warning("flow.flyer_evento.fail", error=str(e))
 
 
 async def _enviar_carta_pdf(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
@@ -291,11 +314,13 @@ async def procesar_mensaje_inbound(
         log.exception("flow.enviar_whapi_fail", error=str(e))
         return ctx.get("outbox", [])
 
-    # 6.5 Adjuntos pedidos por el bot (tras el texto): video de cómo llegar / carta PDF.
+    # 6.5 Adjuntos pedidos por el bot (tras el texto): video / carta PDF / flyer del evento.
     if ctx.get("enviar_video_como_llegar"):
         await _enviar_video_como_llegar(session, cliente_id, cliente_numero)
     if ctx.get("enviar_carta_pdf"):
         await _enviar_carta_pdf(session, cliente_id, cliente_numero)
+    if ctx.get("flyer_evento_fecha"):
+        await _enviar_flyer_evento(session, cliente_id, cliente_numero, ctx["flyer_evento_fecha"])
 
     # 7. Persistir outbound
     await guardar_conversacion(

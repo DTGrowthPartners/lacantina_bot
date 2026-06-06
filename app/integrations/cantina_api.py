@@ -198,6 +198,11 @@ async def consultar_evento(fecha: str) -> dict[str, Any]:
     return await _request("GET", "/api/eventos", params={"fecha": fecha})
 
 
+async def listar_eventos() -> dict[str, Any]:
+    """GET /api/eventos (sin fecha) — todos los eventos registrados."""
+    return await _request("GET", "/api/eventos")
+
+
 async def crear_evento(payload: dict) -> dict[str, Any]:
     """POST /api/eventos — crea/actualiza evento del día.
 

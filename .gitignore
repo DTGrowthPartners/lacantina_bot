@@ -40,3 +40,4 @@ logs/
 
 # Banco de imágenes de estados (runtime)
 data/estados_banco/
+data/media/flyers/

@@ -198,7 +198,9 @@ SHELL_STYLES = r"""
     width: 32px; height: 32px; border-radius: 8px;
     background: var(--chip-orange-bg); color: var(--chip-orange);
     display: grid; place-items: center; font-weight: 700; font-size: 14px;
+    overflow: hidden;
   }
+  .brand-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .brand-name { font-weight: 600; font-size: 14px; color: var(--text-primary); }
   .new-btn {
     display: block; width: 100%; padding: 9px 12px; margin: 4px 0 16px;
@@ -322,13 +324,14 @@ def sidebar_html(active: str = "dashboard") -> str:
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
   </button>
   <div class="brand">
-    <div class="brand-logo">C</div>
+    <div class="brand-logo"><img src="/admin-static/logo.png" alt="La Cantina"></div>
     <div class="brand-name">La Cantina Plus</div>
   </div>
 
   <nav class="nav-group">
     <a class="{cls('dashboard')}" href="/admin/dashboard"><svg class="ico" width="16" height="16"><use href="#i-dashboard"/></svg> <span>Dashboard</span></a>
     <a class="{cls('reservas')}" href="/admin/reservas"><svg class="ico" width="16" height="16"><use href="#i-cal"/></svg> <span>Reservas</span></a>
+    <a class="{cls('eventos')}" href="/admin/eventos"><svg class="ico" width="16" height="16"><use href="#i-spark"/></svg> <span>Eventos</span></a>
     <a class="{cls('chats')}" href="/admin/chats"><svg class="ico" width="16" height="16"><use href="#i-messages"/></svg> <span>Chats</span></a>
     <a class="{cls('contactos')}" href="/admin/contactos"><svg class="ico" width="16" height="16"><use href="#i-users"/></svg> <span>Contactos</span></a>
     <a class="{cls('etiquetas')}" href="/admin/etiquetas"><svg class="ico" width="16" height="16"><use href="#i-spark"/></svg> <span>Etiquetas</span></a>
@@ -353,6 +356,10 @@ def sidebar_html(active: str = "dashboard") -> str:
     <button class="nav-item" id="theme-toggle" style="background:transparent;border:none;width:100%;text-align:left;cursor:pointer;font:inherit;">
       <svg class="ico" width="16" height="16"><use href="#i-theme"/></svg> <span id="theme-label">Modo oscuro</span>
     </button>
+    <a class="nav-item" href="/admin/logout" style="color:#DC2626;">
+      <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span>Cerrar sesión</span>
+    </a>
   </div>
 </aside>
 """
@@ -379,7 +386,7 @@ function _adminShellInit(){
       + '  <button class="hamburger" id="mobile-hamburger" aria-label="Menú">'
       + '    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>'
       + '  </button>'
-      + '  <div class="brand-mini"><div class="brand-logo">C</div><span>La Cantina Plus</span></div>'
+      + '  <div class="brand-mini"><div class="brand-logo"><img src="/admin-static/logo.png"></div><span>La Cantina Plus</span></div>'
       + '</div>'
       + '<div class="sidebar-backdrop" id="sidebar-backdrop"></div>';
     while (mb.firstChild) document.body.insertBefore(mb.firstChild, document.body.firstChild);
@@ -483,7 +490,7 @@ MOBILE_BAR_HTML = """
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
   <div class="brand-mini">
-    <div class="brand-logo">C</div>
+    <div class="brand-logo"><img src="/admin-static/logo.png"></div>
     <span>La Cantina Plus</span>
   </div>
 </div>

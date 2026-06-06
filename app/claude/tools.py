@@ -62,14 +62,23 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "name": "consultar_evento",
         "description": (
-            "Si el cliente pregunta por un evento/show, devuelve nombre, artista, cover "
-            "por persona, link de pago o indica que no hay evento ese día."
+            "Si el cliente pregunta por el evento/show de una FECHA concreta, devuelve "
+            "nombre, artista, cover por persona, link de pago o indica que no hay evento "
+            "ese día. Si hay evento con flyer, este se le envía al cliente."
         ),
         "input_schema": {
             "type": "object",
             "properties": {"fecha": {"type": "string", "description": "YYYY-MM-DD"}},
             "required": ["fecha"],
         },
+    },
+    {
+        "name": "proximos_eventos",
+        "description": (
+            "Lista los PRÓXIMOS eventos/shows (de hoy en adelante). Úsalo cuando el "
+            "cliente pregunte 'cuándo es el próximo evento', 'qué shows vienen', etc."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "crear_reserva",
@@ -214,7 +223,31 @@ async def handler_consultar_disponibilidad(args: dict, ctx: dict) -> dict:
 
 
 async def handler_consultar_evento(args: dict, ctx: dict) -> dict:
-    return await cantina_api.consultar_evento(args.get("fecha"))
+    fecha = args.get("fecha")
+    res = await cantina_api.consultar_evento(fecha)
+    # Si hay evento, marca la fecha para que el flow envíe el flyer (si existe).
+    if isinstance(res, dict) and res.get("ok") and fecha:
+        ctx["flyer_evento_fecha"] = fecha
+    return res
+
+
+async def handler_proximos_eventos(args: dict, ctx: dict) -> dict:
+    """Lista eventos de hoy en adelante (para 'cuándo es el próximo evento')."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    hoy = datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
+    res = await cantina_api.listar_eventos()
+    if not (isinstance(res, dict) and res.get("ok", True)):
+        return res
+    data = res.get("data", res)
+    evs = data.get("eventos") if isinstance(data, dict) else (data if isinstance(data, list) else [])
+    proximos = [
+        {"fecha": e.get("fecha"), "nombre": e.get("nombre"), "artista": e.get("artista"),
+         "tiene_cover": e.get("tiene_cover"), "valor_cover": e.get("valor_cover")}
+        for e in (evs or []) if isinstance(e, dict) and str(e.get("fecha") or "") >= hoy
+    ]
+    proximos.sort(key=lambda e: str(e.get("fecha") or ""))
+    return {"ok": True, "proximos_eventos": proximos[:10]}
 
 
 async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
@@ -348,6 +381,7 @@ Handler = Callable[[dict, dict], Awaitable[dict]]
 HANDLERS: dict[str, Handler] = {
     "consultar_disponibilidad": handler_consultar_disponibilidad,
     "consultar_evento": handler_consultar_evento,
+    "proximos_eventos": handler_proximos_eventos,
     "crear_reserva": handler_crear_reserva,
     "crear_reserva_grupo": handler_crear_reserva_grupo,
     "crear_reserva_sala_privada": handler_crear_reserva_sala,
