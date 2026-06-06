@@ -166,6 +166,19 @@ async def crear(
     res = await cantina_api.crear_reserva(payload)
     if isinstance(res, dict) and res.get("ok"):
         log.info("admin.reservas.creada", mesa_id=mesa_id, fecha=fecha, autor=autor)
+        # Avisar al grupo del equipo de la reserva nueva.
+        r = res.get("reserva") or res.get("data") or {}
+        mesa_n = r.get("mesa_numero") if isinstance(r, dict) else None
+        try:
+            from app.notif_equipo import notificar_equipo
+            await notificar_equipo(
+                f"🪑 *Reserva nueva* (desde el panel)\n"
+                f"👤 {nombre_cliente.strip()} · 👥 {num_personas}p\n"
+                f"🍽️ Mesa {mesa_n or mesa_id} · 📅 {fecha.strip()}"
+                + (f"\n📝 {nota}" if nota else "")
+            )
+        except Exception as e:
+            log.warning("admin.reservas.notif_fail", error=str(e))
         return RedirectResponse(f"/admin/reservas?fecha={fecha}&msg=creada", status_code=303)
     err = (res or {}).get("error", "no se pudo crear")
     log.warning("admin.reservas.crear_fail", error=err)
