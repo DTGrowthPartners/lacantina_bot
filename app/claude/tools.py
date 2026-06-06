@@ -41,6 +41,28 @@ def _extraer_reserva(res: dict) -> dict:
     return res
 
 
+async def _cliente_ya_reservo(fecha: str | None, telefono: str | None) -> list | None:
+    """Mesas que el cliente (por teléfono) YA tiene reservadas esa fecha, o None.
+
+    Evita el bug de reservas duplicadas: si el bot vuelve a 'apartar' tras haber
+    reservado, ve sus propias mesas como ocupadas y crea otra reserva en mesas
+    distintas. Este guardia lo bloquea a nivel de tool.
+    """
+    if not (fecha and telefono):
+        return None
+    resp = await cantina_api.listar_reservas(fecha)
+    if not isinstance(resp, dict):
+        return None
+    data = resp.get("data", resp)
+    reservas = data.get("reservas") if isinstance(data, dict) else (data if isinstance(data, list) else [])
+    mesas = [
+        r.get("mesa_numero") for r in (reservas or [])
+        if isinstance(r, dict) and r.get("estado") != "cancelada"
+        and _mismo_telefono(r.get("telefono"), telefono)
+    ]
+    return mesas or None
+
+
 TOOL_DEFINITIONS: list[dict] = [
     {
         "name": "consultar_disponibilidad",
@@ -251,11 +273,18 @@ async def handler_proximos_eventos(args: dict, ctx: dict) -> dict:
 
 
 async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
+    tel = args.get("telefono") or ctx.get("cliente_numero")
+    ya = await _cliente_ya_reservo(args.get("fecha"), tel)
+    if ya:
+        return {"ok": False, "ya_reservado": True, "mesas": ya,
+                "error": f"Este cliente YA tiene una reserva para {args.get('fecha')} "
+                         f"(mesa(s) {ya}). NO crees otra: confírmale ESA reserva. Si de "
+                         f"verdad necesita una mesa adicional, escala al equipo."}
     payload = {k: v for k, v in {
         "fecha": args.get("fecha"),
         "mesa_id": args.get("mesa_id"),
         "nombre_cliente": args.get("nombre_cliente"),
-        "telefono": args.get("telefono") or ctx.get("cliente_numero"),
+        "telefono": tel,
         "num_personas": args.get("num_personas"),
         "notas": args.get("notas"),
     }.items() if v is not None}
@@ -274,27 +303,61 @@ async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
 
 
 async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
+    tel = args.get("telefono") or ctx.get("cliente_numero")
+    ya = await _cliente_ya_reservo(args.get("fecha"), tel)
+    if ya:
+        return {"ok": False, "ya_reservado": True, "mesas": ya,
+                "error": f"Este cliente YA tiene una reserva para {args.get('fecha')} "
+                         f"(mesa(s) {ya}). NO crees otra: confírmale ESA. Si necesita más "
+                         f"mesas, escala al equipo."}
     payload = {k: v for k, v in {
         "fecha": args.get("fecha"),
         "mesa_numeros": args.get("mesa_numeros") or [],
         "nombre_cliente": args.get("nombre_cliente"),
-        "telefono": args.get("telefono") or ctx.get("cliente_numero"),
+        "telefono": tel,
         "num_personas": args.get("num_personas"),
         "notas": args.get("notas"),
     }.items() if v is not None}
-    return await cantina_api.crear_reserva_grupo(payload)
+    res = await cantina_api.crear_reserva_grupo(payload)
+    if isinstance(res, dict) and res.get("ok"):
+        outbox = ctx.get("outbox")
+        if isinstance(outbox, list):
+            outbox.append({
+                "tipo": "reserva_nueva",
+                "mensaje": (f"🪑 Reserva (grupo) nueva: {args.get('nombre_cliente')} · "
+                            f"{args.get('num_personas')}p · mesas {args.get('mesa_numeros')} · "
+                            f"{args.get('fecha')}"),
+            })
+    return res
 
 
 async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
+    tel = args.get("telefono") or ctx.get("cliente_numero")
+    ya = await _cliente_ya_reservo(args.get("fecha"), tel)
+    if ya:
+        return {"ok": False, "ya_reservado": True, "mesas": ya,
+                "error": f"Este cliente YA tiene una reserva para {args.get('fecha')} "
+                         f"(mesa(s) {ya}). NO crees otra: confírmale ESA. Si necesita más, "
+                         f"escala al equipo."}
     payload = {k: v for k, v in {
         "fecha": args.get("fecha"),
         "sala_id": args.get("sala_id"),
         "nombre_cliente": args.get("nombre_cliente"),
-        "telefono": args.get("telefono") or ctx.get("cliente_numero"),
+        "telefono": tel,
         "num_personas": args.get("num_personas"),
         "notas": args.get("notas"),
     }.items() if v is not None}
-    return await cantina_api.crear_reserva_sala(payload)
+    res = await cantina_api.crear_reserva_sala(payload)
+    if isinstance(res, dict) and res.get("ok"):
+        outbox = ctx.get("outbox")
+        if isinstance(outbox, list):
+            outbox.append({
+                "tipo": "reserva_nueva",
+                "mensaje": (f"🥂 Reserva de SALA privada: {args.get('nombre_cliente')} · "
+                            f"{args.get('num_personas')}p · sala {args.get('sala_id')} · "
+                            f"{args.get('fecha')}"),
+            })
+    return res
 
 
 async def handler_consultar_reserva_cliente(args: dict, ctx: dict) -> dict:
