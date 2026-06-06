@@ -187,6 +187,25 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "required": ["fecha"],
         },
     },
+    {
+        "name": "avisar_cliente",
+        "description": (
+            "Envía un mensaje de WhatsApp a un CLIENTE (no al grupo del equipo). "
+            "Úsalo cuando el equipo te diga 'dile a X que...' o para notificar a un "
+            "cliente (cambio de mesa, confirmación, etc.). Necesitas el teléfono del "
+            "cliente en formato +57...; si no lo tienes, búscalo con "
+            "`consultar_reservas_del_dia` o pídeselo al equipo. Redacta el mensaje en "
+            "primera persona como La Cantina (cálido y claro)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "telefono": {"type": "string", "description": "Número del cliente, +57..."},
+                "mensaje": {"type": "string", "description": "Texto a enviarle al cliente"},
+            },
+            "required": ["telefono", "mensaje"],
+        },
+    },
 ]
 
 
@@ -275,6 +294,36 @@ async def handler_borrar_evento(args: dict, ctx: dict) -> dict:
     return await cantina_api.borrar_evento(args.get("fecha"))
 
 
+async def handler_avisar_cliente(args: dict, ctx: dict) -> dict:
+    """Envía un WhatsApp a un cliente y lo deja registrado en su chat."""
+    tel = (args.get("telefono") or "").strip()
+    mensaje = (args.get("mensaje") or "").strip()
+    if not tel or not mensaje:
+        return {"ok": False, "error": "telefono y mensaje son requeridos"}
+    numero = tel if tel.startswith("+") else "+" + tel.lstrip("+")
+    from app.whapi.client import enviar_texto
+    try:
+        await enviar_texto(numero, mensaje)
+    except Exception as e:
+        log.warning("tools_equipo.avisar_cliente.fail", tel=numero, error=str(e))
+        return {"ok": False, "error": f"no se pudo enviar: {str(e)[:160]}"}
+    # Registrar el outbound en el chat del cliente (aparece en /admin/chats).
+    session = ctx.get("session")
+    if session is not None:
+        try:
+            from app.db.repos import get_or_create_cliente, guardar_conversacion
+            cli = await get_or_create_cliente(session, numero)
+            await guardar_conversacion(
+                session, cliente_id=cli.id, direccion="outbound", tipo="texto",
+                contenido=mensaje,
+                metadata={"enviado_por_equipo": ctx.get("miembro_nombre")},
+            )
+        except Exception as e:
+            log.debug("tools_equipo.avisar_cliente.persist_fail", error=str(e))
+    log.info("tools_equipo.avisar_cliente", tel=numero, por=ctx.get("miembro_nombre"))
+    return {"ok": True, "enviado_a": numero}
+
+
 # ── DISPATCHER ──────────────────────────────────────────────────────────────
 
 Handler = Callable[[dict, dict], Awaitable[dict]]
@@ -292,6 +341,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "marcar_cover_en_entrada": handler_marcar_cover_en_entrada,
     "crear_evento": handler_crear_evento,
     "borrar_evento": handler_borrar_evento,
+    "avisar_cliente": handler_avisar_cliente,
 }
 
 
