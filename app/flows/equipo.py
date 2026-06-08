@@ -123,6 +123,12 @@ async def procesar_mensaje_equipo(
     """
     ident = identidad or _identidad_principal()
     set_whapi_token(ident.token)
+    # Bot desactivado globalmente → silencio total (ni respuestas ni errores).
+    # El equipo lo reactiva desde el dashboard, no por chat.
+    from app.db.repos import bot_activo
+    if not await bot_activo(session):
+        log.info("flow_equipo.bot_inactivo", miembro=miembro.nombre)
+        return
     # destino_envio queda disponible para todos los envíos del flow
     destino_envio = responder_a or miembro.numero_whatsapp
     instruccion = (msg.texto or "").strip()
@@ -202,14 +208,16 @@ async def procesar_mensaje_equipo(
         metadata={"es_equipo": True, "miembro": miembro.nombre, "es_grupo": es_grupo},
     )
 
-    # Descargar imagen si llegó (multimodal vía visión)
+    # Descargar imagen si llegó (multimodal vía visión + posible flyer de evento)
     imagen_b64: str | None = None
     imagen_mime: str | None = None
+    imagen_bytes: bytes | None = None
     if msg.tipo == "imagen" and msg.media_url:
         try:
             async with httpx.AsyncClient(timeout=30) as c:
                 r = await c.get(msg.media_url, headers=auth_headers())
-                if r.status_code < 400 and len(r.content) <= 5 * 1024 * 1024:
+                if r.status_code < 400 and len(r.content) <= 8 * 1024 * 1024:
+                    imagen_bytes = r.content
                     imagen_b64 = base64.b64encode(r.content).decode("ascii")
                     imagen_mime = msg.media_mime or "image/jpeg"
                     log.info("flow_equipo.imagen.descargada",
@@ -297,6 +305,10 @@ async def procesar_mensaje_equipo(
         "miembro_nombre": miembro.nombre,
         "miembro_numero": miembro.numero_whatsapp,
         "rol": miembro.rol,
+        # Imagen adjunta (si la hay) — la usa crear_evento/guardar_flyer_evento
+        # para guardar el flyer cuando Fabio manda "crea este evento con su flyer".
+        "imagen_bytes": imagen_bytes,
+        "imagen_mime": imagen_mime,
     }
 
     tokens_in = tokens_out = cache_r = cache_w = 0
@@ -315,49 +327,44 @@ async def procesar_mensaje_equipo(
             )
         except Exception as e:
             log.exception("flow_equipo.claude_fail", error=str(e))
-            # Si el destino es el grupo EQUIPO CANTINA o un miembro del equipo,
-            # mostramos el error allí (son técnicos y entienden). Si es un
-            # CLIENTE whitelisted, NO enviamos el error al cliente — solo
-            # notificamos al grupo EQUIPO CANTINA y registramos alerta.
-            from app.equipo.directorio import es_miembro_equipo
+            # NUNCA exponer el error técnico crudo (ej. 'credit balance too low')
+            # en un chat. El detalle va al log + alerta interna del admin.
             dest = destino_envio or ""
             es_grupo = dest.endswith("@g.us")
+            from app.equipo.directorio import es_miembro_equipo
             num_check = dest.replace("@s.whatsapp.net", "")
             if not num_check.startswith("+"):
                 num_check = "+" + num_check
             es_canal_tecnico = es_grupo or bool(es_miembro_equipo(num_check))
-
+            # Mensaje GENÉRICO (sin el error): al equipo, un aviso discreto; a un
+            # cliente WL, nada (solo se notifica al grupo y se registra alerta).
             if es_canal_tecnico:
                 try:
                     await enviar_texto(
                         destino_envio,
-                        f"❌ Falló Claude: {str(e)[:120]}. Reintentá en un momento.",
+                        "⚠️ No pude procesar eso ahora mismo (problema técnico). "
+                        "Inténtalo de nuevo en un momento.",
                     )
                 except Exception:
                     pass
             else:
-                # Cliente WL — el cliente NO debe ver el error técnico.
                 try:
                     from app.notif_equipo import notificar_equipo
                     await notificar_equipo(
-                        f"⚠️ *Falló Claude atendiendo a cliente WL*\n\n"
-                        f"📱 {dest}\n👤 {miembro.nombre}\n"
-                        f"Error: {str(e)[:200]}\n\n"
-                        f"_El cliente no recibió respuesta. Atender desde el admin._"
+                        f"⚠️ El bot no pudo atender a un cliente ({dest}) por un "
+                        f"problema técnico. Atiéndanlo desde el panel."
                     )
                 except Exception:
                     pass
-                try:
-                    from app.db.repos import registrar_alerta_fabio
-                    await registrar_alerta_fabio(
-                        session, tipo="claude_api_fail",
-                        mensaje=(
-                            f"Falló Claude atendiendo a cliente WL {miembro.nombre} "
-                            f"({dest}). Error: {str(e)[:300]}."
-                        ),
-                    )
-                except Exception:
-                    pass
+            # Alerta interna con el detalle (visible solo en el admin).
+            try:
+                from app.db.repos import registrar_alerta_fabio
+                await registrar_alerta_fabio(
+                    session, tipo="claude_api_fail",
+                    mensaje=f"Falló Claude (flujo equipo, {dest or miembro.nombre}). Error: {str(e)[:300]}.",
+                )
+            except Exception:
+                pass
             return
 
         usage = getattr(resp, "usage", None)

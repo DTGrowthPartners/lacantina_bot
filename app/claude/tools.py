@@ -263,9 +263,18 @@ async def handler_consultar_disponibilidad(args: dict, ctx: dict) -> dict:
 async def handler_consultar_evento(args: dict, ctx: dict) -> dict:
     fecha = args.get("fecha")
     res = await cantina_api.consultar_evento(fecha)
-    # Si hay evento, marca la fecha para que el flow envíe el flyer (si existe).
     if isinstance(res, dict) and res.get("ok") and fecha:
+        # Marca la fecha para que el flow envíe el flyer (si existe).
         ctx["flyer_evento_fecha"] = fecha
+        # Descripción local del evento (el backend no la guarda).
+        try:
+            from pathlib import Path
+            from app.config import get_settings
+            d = Path(get_settings().data_dir) / "media" / "flyers" / f"{fecha}.txt"
+            if d.exists():
+                res["descripcion"] = d.read_text(encoding="utf-8")
+        except Exception:
+            pass
     return res
 
 

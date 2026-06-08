@@ -32,7 +32,7 @@ from app.claude.client import conversar
 from app.claude.intent import clasificar
 from app.config import get_settings
 from app.db.models import Cliente, Conversacion
-from app.db.repos import guardar_conversacion, ultimos_mensajes
+from app.db.repos import bot_activo, guardar_conversacion, ultimos_mensajes
 from app.logging_setup import log
 from app.utils.humanizer import (
     dentro_horario,
@@ -151,6 +151,10 @@ async def procesar_mensaje_inbound(
     """Procesa un inbound de un cliente (ya persistido por el webhook) y responde."""
     ident = identidad or _identidad_principal()
     set_whapi_token(ident.token)   # asegurar el token correcto en todo I/O whapi de esta tarea
+    # Bot desactivado globalmente → NO enviar nada (ni respuestas ni errores).
+    if not await bot_activo(session):
+        log.info("flow.bot_inactivo", cliente=cliente_numero)
+        return []
     contenido_usuario = msg.texto or ""
     es_audio = msg.tipo == "audio"
 

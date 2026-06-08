@@ -95,6 +95,13 @@ async def vista(request: Request):
                      ("Con cover" if tiene_cover else "Entrada libre"))
         link_html = (f'<a href="{html.escape(str(link))}" target="_blank" class="ev-link">🔗 link de pago</a>'
                      if link else "")
+        txt = _FLYERS / f"{fecha}.txt"
+        desc = ""
+        if txt.exists():
+            try:
+                desc = html.escape(txt.read_text(encoding="utf-8")[:300])
+            except Exception:
+                desc = ""
         cards.append(f"""
         <div class="ev-card {'ev-pasada' if pasada else ''}">
           {flyer_html}
@@ -103,6 +110,7 @@ async def vista(request: Request):
             <div class="ev-nombre">{nombre}</div>
             {f'<div class="ev-artista">🎤 {artista}</div>' if artista else ''}
             <div class="ev-cover">{html.escape(cover_txt)}</div>
+            {f'<div class="ev-desc-txt">{desc}</div>' if desc else ''}
             {link_html}
           </div>
           <form method="POST" action="/admin/eventos/{html.escape(fecha)}/borrar" style="margin:0;"
@@ -157,6 +165,7 @@ async def crear(
     valor_cover: str = Form(""),
     link_pago: str = Form(""),
     tiene_cover: str = Form(""),
+    descripcion: str = Form(""),
 ):
     if not _check_auth(request):
         raise HTTPException(401)
@@ -193,6 +202,10 @@ async def crear(
                     if old.exists():
                         old.unlink()
                 (_FLYERS / f"{fecha}{ext}").write_bytes(data)
+    # Descripción (sidecar local; el backend de eventos no la guarda).
+    if descripcion.strip():
+        _FLYERS.mkdir(parents=True, exist_ok=True)
+        (_FLYERS / f"{fecha}.txt").write_text(descripcion.strip(), encoding="utf-8")
     log.info("admin.eventos.creado", fecha=fecha, nombre=nombre)
     return RedirectResponse("/admin/eventos?msg=creado", status_code=303)
 
@@ -206,6 +219,12 @@ async def borrar(fecha: str, request: Request):
     if p:
         try:
             p.unlink()
+        except Exception:
+            pass
+    txt = _FLYERS / f"{fecha}.txt"
+    if txt.exists():
+        try:
+            txt.unlink()
         except Exception:
             pass
     if isinstance(res, dict) and res.get("ok"):
@@ -250,6 +269,7 @@ __SHELL_STYLES__
   .ev-nombre { font-weight:600; font-size:15px; color:var(--text-primary); margin:2px 0; }
   .ev-artista { font-size:13px; color:var(--text-secondary); }
   .ev-cover { font-size:12.5px; color:var(--text-secondary); margin-top:4px; }
+  .ev-desc-txt { font-size:12px; color:var(--text-tertiary); margin-top:6px; line-height:1.4; }
   .ev-link { display:inline-block; margin-top:6px; font-size:12.5px; color:var(--chip-blue); text-decoration:none; }
   .ev-del { position:absolute; top:8px; right:8px; width:28px; height:28px; border-radius:8px; border:none; cursor:pointer; font-size:18px; line-height:1; background:rgba(0,0,0,.45); color:#fff; }
   .empty { padding:28px; text-align:center; color:var(--text-tertiary); font-size:13px; grid-column:1/-1; border:1px dashed var(--border); border-radius:12px; }
@@ -272,6 +292,7 @@ __ICON_SPRITE__
           <div><label>Artista</label><input name="artista" placeholder="Cantante / show"/></div>
           <div><label>Valor cover (COP)</label><input name="valor_cover" inputmode="numeric" placeholder="Ej: 50000"/></div>
           <div style="grid-column:1/-1;"><label>Link de pago (pasarela, opcional)</label><input name="link_pago" placeholder="https://..."/></div>
+          <div style="grid-column:1/-1;"><label>Descripción (opcional)</label><input name="descripcion" placeholder="Ej: Noche de música popular con Carin León en vivo. Cover incluye…"/></div>
           <div class="chk"><input type="checkbox" name="tiene_cover" id="tc" value="1"/><label for="tc" style="margin:0;">Tiene cover (entrada con costo)</label></div>
           <div><label>Flyer (imagen, opcional)</label><input type="file" name="flyer" accept="image/*"/></div>
         </div>

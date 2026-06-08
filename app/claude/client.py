@@ -128,12 +128,13 @@ async def conversar(
             # 2) Registrar alerta en BD para que aparezca en /admin/alerta-fabio.
             cliente_n = ctx.get("cliente_numero", "?") if isinstance(ctx, dict) else "?"
             cliente_id_ctx = ctx.get("cliente_id") if isinstance(ctx, dict) else None
+            # Aviso DISCRETO al equipo (sin el error técnico crudo — el detalle va
+            # al log y a la alerta interna del admin, no a un chat).
             try:
                 from app.notif_equipo import notificar_equipo
                 await notificar_equipo(
-                    f"⚠️ *Falló Claude — atender a {cliente_n}*\n\n"
-                    f"Error: {str(e)[:200]}\n\n"
-                    f"_El cliente no recibió respuesta. Tomen el chat en el admin._"
+                    f"⚠️ El bot no pudo responder a un cliente ({cliente_n}) por un "
+                    f"problema técnico. Atiéndanlo desde el panel (/admin/chats)."
                 )
             except Exception:
                 pass

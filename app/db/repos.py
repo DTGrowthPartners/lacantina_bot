@@ -99,6 +99,20 @@ async def cliente_esta_bloqueado(session: AsyncSession, numero: str) -> bool:
     return bool(bloqueado)
 
 
+async def bot_activo(session: AsyncSession) -> bool:
+    """¿El bot está activo globalmente? (toggle del dashboard / bot_estado.activo).
+
+    Si está DESACTIVADO, los flows no deben enviar NINGÚN mensaje (ni respuestas
+    ni errores). Defensivo: si la consulta falla, asume activo.
+    """
+    from sqlalchemy import text as _t
+    try:
+        row = (await session.execute(_t("SELECT activo FROM bot_estado WHERE id=1"))).first()
+        return bool(row[0]) if row else True
+    except Exception:
+        return True
+
+
 # ── INTERVENCIÓN HUMANA ───────────────────────────────────────────────────────
 
 

@@ -11,10 +11,39 @@ Todas las tools golpean el backend de mesas (`cantina_api.py`).
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Awaitable, Callable
 
+from app.config import get_settings
 from app.integrations import cantina_api
 from app.logging_setup import log
+
+_FLYERS = Path(get_settings().data_dir) / "media" / "flyers"
+_EXT_POR_MIME = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+
+
+def _guardar_flyer(fecha: str, imagen_bytes: bytes | None, mime: str | None) -> bool:
+    """Guarda la imagen como flyer del evento de una fecha. True si guardó."""
+    if not (fecha and imagen_bytes):
+        return False
+    ext = _EXT_POR_MIME.get((mime or "").lower(), ".jpg")
+    _FLYERS.mkdir(parents=True, exist_ok=True)
+    for e in (".jpg", ".jpeg", ".png", ".webp"):  # un flyer por fecha
+        old = _FLYERS / f"{fecha}{e}"
+        if old.exists():
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    (_FLYERS / f"{fecha}{ext}").write_bytes(imagen_bytes)
+    return True
+
+
+def _guardar_descripcion(fecha: str, texto: str | None) -> None:
+    if not (fecha and (texto or "").strip()):
+        return
+    _FLYERS.mkdir(parents=True, exist_ok=True)
+    (_FLYERS / f"{fecha}.txt").write_text(texto.strip(), encoding="utf-8")
 
 
 TOOL_DEFINITIONS_EQUIPO: list[dict] = [
@@ -162,20 +191,36 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
     {
         "name": "crear_evento",
         "description": (
-            "Crea/actualiza el evento de un día (artista, cover, link de pago). "
-            "Solo el equipo lo usa, NO el flujo cliente."
+            "Crea/actualiza el evento de un día (artista, cover, link de pago, "
+            "descripción). Solo el equipo. **Si el equipo adjuntó una imagen en el "
+            "mismo mensaje, se guarda como FLYER del evento automáticamente** y el "
+            "bot se la enviará a los clientes que pregunten por ese día."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "fecha": {"type": "string"},
+                "fecha": {"type": "string", "description": "YYYY-MM-DD"},
                 "nombre": {"type": "string"},
                 "artista": {"type": "string"},
                 "tiene_cover": {"type": "boolean"},
                 "valor_cover": {"type": "integer", "description": "COP por persona"},
-                "link_pago": {"type": "string"},
+                "link_pago": {"type": "string", "description": "Link de la pasarela de pago"},
+                "descripcion": {"type": "string", "description": "Descripción corta del evento"},
             },
             "required": ["fecha", "nombre"],
+        },
+    },
+    {
+        "name": "guardar_flyer_evento",
+        "description": (
+            "Guarda la imagen ADJUNTA en el mensaje como flyer del evento de una "
+            "fecha (para agregar/cambiar el flyer de un evento ya creado). Requiere "
+            "que el equipo haya mandado una imagen."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"fecha": {"type": "string", "description": "YYYY-MM-DD"}},
+            "required": ["fecha"],
         },
     },
     {
@@ -286,8 +331,32 @@ async def handler_marcar_cover_en_entrada(args: dict, ctx: dict) -> dict:
 
 
 async def handler_crear_evento(args: dict, ctx: dict) -> dict:
-    payload = {k: v for k, v in args.items() if v is not None}
-    return await cantina_api.crear_evento(payload)
+    fecha = args.get("fecha")
+    descripcion = args.get("descripcion")
+    # El backend de eventos no guarda descripción ni flyer → van aparte (local).
+    payload = {k: v for k, v in args.items()
+               if v is not None and k not in ("descripcion",)}
+    res = await cantina_api.crear_evento(payload)
+    if isinstance(res, dict) and res.get("ok"):
+        guardo_flyer = _guardar_flyer(fecha, ctx.get("imagen_bytes"), ctx.get("imagen_mime"))
+        _guardar_descripcion(fecha, descripcion)
+        res["flyer_guardado"] = guardo_flyer
+        if not guardo_flyer:
+            res["nota_flyer"] = ("Evento creado. No adjuntaste imagen, así que NO hay flyer. "
+                                 "Si quieres flyer, mándame la imagen y usa guardar_flyer_evento.")
+        else:
+            res["nota_flyer"] = "Evento creado CON flyer. El bot se lo enviará a quien pregunte por ese día."
+        log.info("tools_equipo.crear_evento", fecha=fecha, flyer=guardo_flyer)
+    return res
+
+
+async def handler_guardar_flyer_evento(args: dict, ctx: dict) -> dict:
+    fecha = args.get("fecha")
+    if not ctx.get("imagen_bytes"):
+        return {"ok": False, "error": "No recibí ninguna imagen. Adjunta el flyer en el mismo mensaje."}
+    ok = _guardar_flyer(fecha, ctx.get("imagen_bytes"), ctx.get("imagen_mime"))
+    log.info("tools_equipo.guardar_flyer_evento", fecha=fecha, ok=ok)
+    return {"ok": ok, "fecha": fecha} if ok else {"ok": False, "error": "no se pudo guardar el flyer"}
 
 
 async def handler_borrar_evento(args: dict, ctx: dict) -> dict:
@@ -340,6 +409,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "marcar_cover_pagado": handler_marcar_cover_pagado,
     "marcar_cover_en_entrada": handler_marcar_cover_en_entrada,
     "crear_evento": handler_crear_evento,
+    "guardar_flyer_evento": handler_guardar_flyer_evento,
     "borrar_evento": handler_borrar_evento,
     "avisar_cliente": handler_avisar_cliente,
 }
