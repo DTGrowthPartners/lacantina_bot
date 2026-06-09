@@ -409,6 +409,9 @@ async def handler_avisar_cliente(args: dict, ctx: dict) -> dict:
 
 async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
     """Manda la foto del plano del salón al chat actual (grupo o personal)."""
+    # Dedup intra-turno: una sola foto por mensaje (evita reenvíos en el tool-loop).
+    if ctx.get("_plano_enviado"):
+        return {"ok": True, "nota": "El plano ya se envió en este turno. NO lo mandes otra vez."}
     destino = ctx.get("destino_envio")
     if not destino:
         return {"ok": False, "error": "no hay chat destino para enviar la imagen"}
@@ -425,6 +428,7 @@ async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
     except Exception as e:
         log.warning("tools_equipo.enviar_plano.fail", destino=destino, error=str(e))
         return {"ok": False, "error": f"no se pudo enviar la foto: {str(e)[:160]}"}
+    ctx["_plano_enviado"] = True
     log.info("tools_equipo.enviar_plano_espacio", destino=destino)
     return {
         "ok": True,
