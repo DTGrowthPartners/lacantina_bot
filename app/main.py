@@ -620,6 +620,29 @@ document.addEventListener("DOMContentLoaded", function() {
   var isLogin = /\\/admin\\/login\\b/.test(location.pathname);
   if (isLogin) {
     document.body.classList.add("no-shell");
+    // Toggle ver/ocultar contraseña
+    try {
+      var pw = document.querySelector('input[type="password"]');
+      if (pw && !pw.dataset.eyeAdded) {
+        pw.dataset.eyeAdded = "1";
+        pw.style.paddingRight = "66px";
+        var holder = document.createElement("span");
+        holder.style.cssText = "position:relative;display:block;width:100%;";
+        pw.parentNode.insertBefore(holder, pw);
+        holder.appendChild(pw);
+        var eye = document.createElement("button");
+        eye.type = "button";
+        eye.setAttribute("aria-label", "Mostrar u ocultar contraseña");
+        eye.textContent = "Mostrar";
+        eye.style.cssText = "position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:12px;font-weight:600;padding:4px 6px;line-height:1;z-index:5;";
+        eye.addEventListener("click", function(){
+          var show = pw.type === "password";
+          pw.type = show ? "text" : "password";
+          eye.textContent = show ? "Ocultar" : "Mostrar";
+        });
+        holder.appendChild(eye);
+      }
+    } catch(e) {}
     return;
   }
   if (document.querySelector("aside.sidebar.injected")) return;

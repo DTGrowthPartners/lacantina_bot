@@ -96,25 +96,45 @@ async def vista(request: Request):
         link_html = (f'<a href="{html.escape(str(link))}" target="_blank" class="ev-link">🔗 link de pago</a>'
                      if link else "")
         txt = _FLYERS / f"{fecha}.txt"
-        desc = ""
+        desc_raw = ""
         if txt.exists():
             try:
-                desc = html.escape(txt.read_text(encoding="utf-8")[:300])
+                desc_raw = txt.read_text(encoding="utf-8")[:300]
             except Exception:
-                desc = ""
+                desc_raw = ""
+        desc = html.escape(desc_raw)
+        cover_val = "" if cover is None else str(cover)
+        fe = html.escape(fecha)
+        data_attrs = (
+            f'data-fecha="{fe}" '
+            f'data-nombre="{html.escape(str(e.get("nombre") or ""))}" '
+            f'data-artista="{html.escape(str(e.get("artista") or ""))}" '
+            f'data-cover="{html.escape(cover_val)}" '
+            f'data-link="{html.escape(str(link or ""))}" '
+            f'data-tienecover="{"1" if tiene_cover else ""}" '
+            f'data-desc="{html.escape(desc_raw)}"'
+        )
         cards.append(f"""
-        <div class="ev-card {'ev-pasada' if pasada else ''}">
+        <div class="ev-card {'ev-pasada' if pasada else ''}" {data_attrs}>
           {flyer_html}
           <div class="ev-body">
-            <div class="ev-fecha">📅 {html.escape(fecha)}{' · (pasado)' if pasada else ''}</div>
+            <div class="ev-fecha">📅 {fe}{' · (pasado)' if pasada else ''}</div>
             <div class="ev-nombre">{nombre}</div>
             {f'<div class="ev-artista">🎤 {artista}</div>' if artista else ''}
             <div class="ev-cover">{html.escape(cover_txt)}</div>
             {f'<div class="ev-desc-txt">{desc}</div>' if desc else ''}
             {link_html}
+            <div class="ev-acts">
+              <button type="button" class="ev-act" onclick="editarEvento(this)">✏️ Editar</button>
+              <form method="POST" action="/admin/eventos/{fe}/flyer" enctype="multipart/form-data" style="margin:0;">
+                <label class="ev-act" style="cursor:pointer;">📷 {'Cambiar' if flyer else 'Agregar'} flyer
+                  <input type="file" name="flyer" accept="image/*" onchange="this.form.submit()" hidden/>
+                </label>
+              </form>
+            </div>
           </div>
-          <form method="POST" action="/admin/eventos/{html.escape(fecha)}/borrar" style="margin:0;"
-                onsubmit="return confirm('¿Borrar el evento del {html.escape(fecha)}? (las reservas se conservan)');">
+          <form method="POST" action="/admin/eventos/{fe}/borrar" style="margin:0;"
+                onsubmit="return confirm('¿Borrar el evento del {fe}? (las reservas se conservan)');">
             <button class="ev-del" title="Borrar evento">×</button>
           </form>
         </div>""")
@@ -127,7 +147,9 @@ async def vista(request: Request):
     flash = ""
     msg = request.query_params.get("msg")
     if msg == "creado":
-        flash = '<div class="flash ok">Evento creado.</div>'
+        flash = '<div class="flash ok">Evento guardado.</div>'
+    elif msg == "flyer_ok":
+        flash = '<div class="flash ok">Flyer actualizado.</div>'
     elif msg == "borrado":
         flash = '<div class="flash ok">Evento borrado.</div>'
     elif msg and msg.startswith("error:"):
@@ -210,6 +232,31 @@ async def crear(
     return RedirectResponse("/admin/eventos?msg=creado", status_code=303)
 
 
+@router.post("/{fecha}/flyer")
+async def subir_flyer(fecha: str, request: Request):
+    """Sube/reemplaza SOLO el flyer de un evento ya existente."""
+    if not _check_auth(request):
+        raise HTTPException(401)
+    form = await request.form()
+    archivo = form.get("flyer")
+    if archivo is None or not getattr(archivo, "filename", ""):
+        return RedirectResponse("/admin/eventos?msg=error:no adjuntaste imagen", status_code=303)
+    ext = Path(archivo.filename).suffix.lower()
+    if ext not in _EXT_OK:
+        return RedirectResponse("/admin/eventos?msg=error:formato no soportado (usa jpg/png/webp)", status_code=303)
+    data = await archivo.read()
+    if not data:
+        return RedirectResponse("/admin/eventos?msg=error:imagen vacía", status_code=303)
+    _FLYERS.mkdir(parents=True, exist_ok=True)
+    for e in _EXT_OK:
+        old = _FLYERS / f"{fecha}{e}"
+        if old.exists():
+            old.unlink()
+    (_FLYERS / f"{fecha}{ext}").write_bytes(data)
+    log.info("admin.eventos.flyer_subido", fecha=fecha)
+    return RedirectResponse("/admin/eventos?msg=flyer_ok", status_code=303)
+
+
 @router.post("/{fecha}/borrar")
 async def borrar(fecha: str, request: Request):
     if not _check_auth(request):
@@ -271,6 +318,9 @@ __SHELL_STYLES__
   .ev-cover { font-size:12.5px; color:var(--text-secondary); margin-top:4px; }
   .ev-desc-txt { font-size:12px; color:var(--text-tertiary); margin-top:6px; line-height:1.4; }
   .ev-link { display:inline-block; margin-top:6px; font-size:12.5px; color:var(--chip-blue); text-decoration:none; }
+  .ev-acts { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .ev-act { display:inline-flex; align-items:center; gap:4px; padding:5px 10px; font-size:12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-soft); color:var(--text-secondary); cursor:pointer; font:inherit; font-size:12px; }
+  .ev-act:hover { border-color:var(--btn-primary-bg); color:var(--text-primary); }
   .ev-del { position:absolute; top:8px; right:8px; width:28px; height:28px; border-radius:8px; border:none; cursor:pointer; font-size:18px; line-height:1; background:rgba(0,0,0,.45); color:#fff; }
   .empty { padding:28px; text-align:center; color:var(--text-tertiary); font-size:13px; grid-column:1/-1; border:1px dashed var(--border); border-radius:12px; }
 </style>
@@ -284,8 +334,8 @@ __ICON_SPRITE__
     {{flash}}
 
     <div class="card">
-      <div class="card-header"><div class="card-title">+ Nuevo evento</div></div>
-      <form method="POST" action="/admin/eventos/crear" enctype="multipart/form-data">
+      <div class="card-header"><div class="card-title" id="ev-form-title">+ Nuevo evento</div></div>
+      <form method="POST" action="/admin/eventos/crear" enctype="multipart/form-data" id="ev-form">
         <div class="form-grid">
           <div><label>Fecha</label><input type="date" name="fecha" value="{{hoy}}" required/></div>
           <div><label>Nombre del evento</label><input name="nombre" required placeholder="Ej: Noche de Carin León"/></div>
@@ -296,7 +346,10 @@ __ICON_SPRITE__
           <div class="chk"><input type="checkbox" name="tiene_cover" id="tc" value="1"/><label for="tc" style="margin:0;">Tiene cover (entrada con costo)</label></div>
           <div><label>Flyer (imagen, opcional)</label><input type="file" name="flyer" accept="image/*"/></div>
         </div>
-        <div class="form-actions"><button type="submit" class="btn-primary">Crear evento</button></div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" id="ev-submit">Crear evento</button>
+          <button type="button" class="ev-act" id="ev-cancel" style="display:none;margin-left:8px;" onclick="cancelarEdicion()">Cancelar edición</button>
+        </div>
       </form>
     </div>
 
@@ -307,4 +360,29 @@ __ICON_SPRITE__
   </main>
 </div>
 __THEME_JS__
+<script>
+function editarEvento(btn){
+  var c = btn.closest('.ev-card'); if(!c) return;
+  var f = document.getElementById('ev-form');
+  f.fecha.value        = c.dataset.fecha || '';
+  f.nombre.value       = c.dataset.nombre || '';
+  f.artista.value      = c.dataset.artista || '';
+  f.valor_cover.value  = c.dataset.cover || '';
+  f.link_pago.value    = c.dataset.link || '';
+  f.descripcion.value  = c.dataset.desc || '';
+  f.querySelector('[name=tiene_cover]').checked = (c.dataset.tienecover === '1');
+  document.getElementById('ev-form-title').textContent = '✏️ Editar evento · ' + (c.dataset.fecha || '');
+  document.getElementById('ev-submit').textContent = 'Guardar cambios';
+  document.getElementById('ev-cancel').style.display = '';
+  f.scrollIntoView({behavior:'smooth', block:'start'});
+  try { f.nombre.focus(); } catch(e){}
+}
+function cancelarEdicion(){
+  var f = document.getElementById('ev-form');
+  f.reset();
+  document.getElementById('ev-form-title').textContent = '+ Nuevo evento';
+  document.getElementById('ev-submit').textContent = 'Crear evento';
+  document.getElementById('ev-cancel').style.display = 'none';
+}
+</script>
 </body></html>"""
