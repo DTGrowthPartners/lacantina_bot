@@ -69,3 +69,15 @@ Preguntas que llegan TODOS los días al chat. Usa estas como referencia de
 - Si el mensaje es claramente spam → no responder.
 - Si es ambiguo → responder amable: *"Hola, soy de La Cantina Plus. ¿En qué te
   ayudo?"*
+
+**P: ¿Que es la Meona?**
+R: La meona es un evento que se suele hacer 1 vez al mes en el que por un cover de entrada la persona tiene permitido beber tanta cerveza (águila negra y light) como quiera hasta que alguien que este participando vaya al baño.
+_(agregada por admin · 2026-06-06)_
+
+**P: ¿Decoran para las reservas de cumpleaños?**
+R: La decoración para cumpleaños cuenta solo con globos en los espacios donde se reservo el cumpleaños.
+_(agregada por admin · 2026-06-06)_
+
+**P: ¿Los dias de partidos hay ofertas?**
+R: Si, los dias de partido (Ya sea de Colombia o Nacional) hay oferta de cervezas y cubetazos a mitad de precio. Ej: El Cubetazo de coronita que vale 60.000 quedaria en 30.000
+_(agregada por admin · 2026-06-08)_
