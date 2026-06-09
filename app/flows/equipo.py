@@ -305,6 +305,9 @@ async def procesar_mensaje_equipo(
         "miembro_nombre": miembro.nombre,
         "miembro_numero": miembro.numero_whatsapp,
         "rol": miembro.rol,
+        # Chat al que se responde (grupo o personal) — lo usa enviar_plano_espacio
+        # para mandar la foto al mismo chat.
+        "destino_envio": destino_envio,
         # Imagen adjunta (si la hay) — la usa crear_evento/guardar_flyer_evento
         # para guardar el flyer cuando Fabio manda "crea este evento con su flyer".
         "imagen_bytes": imagen_bytes,

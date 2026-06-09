@@ -19,6 +19,7 @@ from app.integrations import cantina_api
 from app.logging_setup import log
 
 _FLYERS = Path(get_settings().data_dir) / "media" / "flyers"
+_PLANO = Path(get_settings().data_dir) / "media" / "plano-espacio.png"
 _EXT_POR_MIME = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
 
@@ -47,6 +48,19 @@ def _guardar_descripcion(fecha: str, texto: str | None) -> None:
 
 
 TOOL_DEFINITIONS_EQUIPO: list[dict] = [
+    {
+        "name": "enviar_plano_espacio",
+        "description": (
+            "Envía la FOTO del plano/distribución del salón a ESTE chat (grupo o "
+            "personal). Úsalo cuando pregunten por la distribución, cómo están las "
+            "mesas, el mapa/plano del salón o pidan 'una foto de cómo están "
+            "distribuidas las mesas'. SÍ existe la foto guardada en el servidor — "
+            "NUNCA digas que no la tienes ni que la herramienta no está disponible. "
+            "Acompáñala con una breve descripción de las 3 zonas (Cantina, VIP, "
+            "Rumbero)."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
     {
         "name": "consultar_reservas_del_dia",
         "description": "Lista las reservas de un día (resumen para el equipo).",
@@ -393,11 +407,38 @@ async def handler_avisar_cliente(args: dict, ctx: dict) -> dict:
     return {"ok": True, "enviado_a": numero}
 
 
+async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
+    """Manda la foto del plano del salón al chat actual (grupo o personal)."""
+    destino = ctx.get("destino_envio")
+    if not destino:
+        return {"ok": False, "error": "no hay chat destino para enviar la imagen"}
+    if not _PLANO.exists():
+        log.warning("tools_equipo.enviar_plano.no_existe", path=str(_PLANO))
+        return {"ok": False, "error": "no encuentro la foto del plano en el servidor"}
+    from app.whapi.client import enviar_imagen_bytes
+    try:
+        await enviar_imagen_bytes(
+            destino, _PLANO.read_bytes(), mime="image/png",
+            filename="plano-espacio.png",
+            caption="🗺️ Distribución del salón — La Cantina Plus",
+        )
+    except Exception as e:
+        log.warning("tools_equipo.enviar_plano.fail", destino=destino, error=str(e))
+        return {"ok": False, "error": f"no se pudo enviar la foto: {str(e)[:160]}"}
+    log.info("tools_equipo.enviar_plano_espacio", destino=destino)
+    return {
+        "ok": True,
+        "nota": "Foto del plano enviada a este chat. En tu texto describe brevemente "
+                "las 3 zonas (Cantina/derecha, VIP/medio, Rumbero/izquierda).",
+    }
+
+
 # ── DISPATCHER ──────────────────────────────────────────────────────────────
 
 Handler = Callable[[dict, dict], Awaitable[dict]]
 
 HANDLERS_EQUIPO: dict[str, Handler] = {
+    "enviar_plano_espacio": handler_enviar_plano_espacio,
     "consultar_reservas_del_dia": handler_consultar_reservas_del_dia,
     "resumen_dia": handler_resumen_dia,
     "consultar_reserva": handler_consultar_reserva,
