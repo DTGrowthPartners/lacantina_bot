@@ -449,9 +449,22 @@ async def handler_enviar_carta(args: dict, ctx: dict) -> dict:
 
 
 async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
+    # Dedup intra-turno: Claude a veces llama esta tool varias veces dentro del
+    # mismo tool-loop (hasta 5 rondas) → reenviaba el MISMO aviso al grupo 5
+    # veces. Con una sola escalación por turno basta.
+    if ctx.get("_ya_escalo"):
+        log.info("tools.escalar_a_equipo.dedup", cliente_id=ctx.get("cliente_id"))
+        return {
+            "ok": True,
+            "escalado": True,
+            "nota": "Ya se avisó al equipo en este turno. NO vuelvas a escalar; "
+                    "solo responde al cliente con calma que el equipo lo verificará.",
+        }
+    ctx["_ya_escalo"] = True
     outbox = ctx.get("outbox")
     if isinstance(outbox, list):
         outbox.append({
+            "clase": "escalacion",
             "tipo": args.get("tipo", "otro"),
             "mensaje": args.get("mensaje") or "Escalación sin detalle",
             "cliente_id": ctx.get("cliente_id"),

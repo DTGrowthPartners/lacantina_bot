@@ -1302,6 +1302,10 @@ def _lock_for_cliente(cliente_id: int) -> asyncio.Lock:
     return lock
 
 
+_ULTIMA_ESCALACION: dict[str, float] = {}
+_ESCALACION_THROTTLE_S = 600  # 10 min: evita spam si el cliente reescribe lo mismo
+
+
 async def _drain_outbox(outbox: list[dict]) -> None:
     """Despacha al GRUPO DEL EQUIPO los avisos encolados por las tools del flujo
     cliente: reserva nueva, comprobante de cover, escalación.
@@ -1311,8 +1315,19 @@ async def _drain_outbox(outbox: list[dict]) -> None:
     """
     if not outbox:
         return
+    import time
     from app.notif_equipo import notificar_equipo
     for item in outbox:
+        # Throttle de escalaciones: si ya avisamos por este cliente hace poco,
+        # no repetimos al grupo (las reservas/comprobantes NO se throttlean).
+        if item.get("clase") == "escalacion":
+            num = str(item.get("cliente_numero") or "?")
+            ahora = time.monotonic()
+            ultima = _ULTIMA_ESCALACION.get(num, 0.0)
+            if ahora - ultima < _ESCALACION_THROTTLE_S:
+                log.info("flow.outbox.escalacion_throttled", cliente=num)
+                continue
+            _ULTIMA_ESCALACION[num] = ahora
         # Formato del flujo cliente: {tipo, mensaje, ...} → grupo del equipo.
         mensaje = item.get("mensaje") or item.get("text")
         if mensaje:
