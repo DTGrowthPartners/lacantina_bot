@@ -599,8 +599,12 @@ def _build_admin_inject() -> str:
   // Auto-redirect /admin → /admin/dashboard
   var p = location.pathname.replace(/\\/$/, "");
   if (p === "/admin") { location.replace("/admin/dashboard"); return; }
-  // Tema dark/light desde localStorage (también ya lo hace SHELL_STYLES head-script,
-  // pero por seguridad lo repetimos)
+  // El login SIEMPRE en modo oscuro (sin importar localStorage).
+  if (/\\/admin\\/login\\b/.test(location.pathname)) {
+    document.documentElement.setAttribute("data-theme", "dark");
+    return;
+  }
+  // Resto: tema dark/light desde localStorage.
   try {
     var saved = localStorage.getItem("theme");
     document.documentElement.setAttribute("data-theme", saved === "dark" ? "dark" : "light");

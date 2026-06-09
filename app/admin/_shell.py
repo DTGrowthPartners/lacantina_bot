@@ -407,9 +407,11 @@ function _adminShellInit(){
     // mejor: ponerlo absolute dentro del sidebar (CSS ya define right:-12px;top:18px)
   });
 
-  // ── Tema dark/light ──
-  const saved = localStorage.getItem('theme');
-  document.documentElement.setAttribute('data-theme', saved === 'dark' ? 'dark' : 'light');
+  // ── Tema dark/light ── (el login queda SIEMPRE oscuro, no lo tocamos)
+  if (!/\/admin\/login\b/.test(location.pathname)) {
+    const saved = localStorage.getItem('theme');
+    document.documentElement.setAttribute('data-theme', saved === 'dark' ? 'dark' : 'light');
+  }
   const btn = document.getElementById('theme-toggle');
   if (btn) {
     btn.addEventListener('click', () => {
