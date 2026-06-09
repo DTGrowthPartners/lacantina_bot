@@ -62,6 +62,7 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 
 _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
 _CARTA_PDF = Path(settings.data_dir) / "media" / "Menu_La_Cantina.pdf"
+_PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _FLYERS_DIR = Path(settings.data_dir) / "media" / "flyers"
 
 
@@ -103,6 +104,26 @@ async def _enviar_carta_pdf(session: AsyncSession, cliente_id: int, cliente_nume
         log.info("flow.carta_pdf.enviado", cliente=cliente_numero)
     except Exception as e:
         log.warning("flow.carta_pdf.fail", error=str(e))
+
+
+async def _enviar_plano_espacio(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
+    """Envía la foto del plano/distribución del salón al cliente (tras el texto)."""
+    if not _PLANO_ESPACIO.exists():
+        log.warning("flow.plano_espacio.no_existe", path=str(_PLANO_ESPACIO))
+        return
+    try:
+        await enviar_imagen_bytes(
+            cliente_numero, _PLANO_ESPACIO.read_bytes(), mime="image/png",
+            filename="plano-espacio.png",
+            caption="🗺️ Así es nuestro salón 🎶 ¡Escoge tu mesa!",
+        )
+        await guardar_conversacion(
+            session, cliente_id=cliente_id, direccion="outbound", tipo="imagen",
+            contenido="[plano del salón]", metadata={"media": "plano_espacio"},
+        )
+        log.info("flow.plano_espacio.enviado", cliente=cliente_numero)
+    except Exception as e:
+        log.warning("flow.plano_espacio.fail", error=str(e))
 
 
 async def _enviar_video_como_llegar(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
@@ -323,6 +344,8 @@ async def procesar_mensaje_inbound(
         await _enviar_video_como_llegar(session, cliente_id, cliente_numero)
     if ctx.get("enviar_carta_pdf"):
         await _enviar_carta_pdf(session, cliente_id, cliente_numero)
+    if ctx.get("enviar_plano_espacio"):
+        await _enviar_plano_espacio(session, cliente_id, cliente_numero)
     if ctx.get("flyer_evento_fecha"):
         await _enviar_flyer_evento(session, cliente_id, cliente_numero, ctx["flyer_evento_fecha"])
 

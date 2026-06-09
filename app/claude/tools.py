@@ -210,6 +210,24 @@ TOOL_DEFINITIONS: list[dict] = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "enviar_plano_espacio",
+        "description": (
+            "Envía al cliente la FOTO del plano/distribución del salón de La "
+            "Cantina (las mesas y las 3 zonas). Úsalo cuando pregunte por el "
+            "espacio, cómo es el lugar/salón, dónde está una mesa, dónde queda "
+            "su mesa, la ubicación de las mesas, el mapa/plano o la distribución. "
+            "(OJO: NO es lo mismo que 'cómo llegar'/dirección → para eso usa "
+            "`enviar_como_llegar`.) JUNTO con la foto, en tu texto describe "
+            "brevemente cada zona usando la info del venue: *Cantina* (mesas "
+            "1–16, zona general), *VIP* (mesas 17–25, con mesas grandes de 8p) y "
+            "*Rumbero* (mesas 26–42, zona general), y menciona barra, tarima y "
+            "baños. Cierra invitando al cliente a escoger una mesa o zona para "
+            "reservar. Llámalo una sola vez por conversación salvo que lo "
+            "vuelva a pedir."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "escalar_a_equipo",
         "description": (
             "Avisa al equipo cuando el caso está fuera de alcance: queja, evento privado, "
@@ -448,6 +466,18 @@ async def handler_enviar_carta(args: dict, ctx: dict) -> dict:
     return {"ok": True, "nota": "La carta en PDF se enviará junto con tu respuesta."}
 
 
+async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
+    """Marca que hay que enviar la foto del plano/distribución del salón (tras el texto)."""
+    ctx["enviar_plano_espacio"] = True
+    log.info("tools.enviar_plano_espacio", cliente=ctx.get("cliente_numero"))
+    return {
+        "ok": True,
+        "nota": "La foto del plano del salón se enviará junto con tu respuesta. "
+                "En tu texto describe brevemente cada zona (Cantina, VIP, Rumbero) "
+                "e invita al cliente a escoger una mesa o zona.",
+    }
+
+
 async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
     # Dedup intra-turno: Claude a veces llama esta tool varias veces dentro del
     # mismo tool-loop (hasta 5 rondas) → reenviaba el MISMO aviso al grupo 5
@@ -490,6 +520,7 @@ HANDLERS: dict[str, Handler] = {
     "registrar_comprobante_cover": handler_registrar_comprobante_cover,
     "enviar_como_llegar": handler_enviar_como_llegar,
     "enviar_carta": handler_enviar_carta,
+    "enviar_plano_espacio": handler_enviar_plano_espacio,
     "escalar_a_equipo": handler_escalar_a_equipo,
 }
 
