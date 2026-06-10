@@ -179,11 +179,12 @@ async def procesar_mensaje_inbound(
     contenido_usuario = msg.texto or ""
     es_audio = msg.tipo == "audio"
 
-    # Nota de voz: La Cantina no tiene transcripción configurada. En vez de
-    # ignorarla, le pedimos amablemente al cliente que escriba el mensaje.
+    # Nota de voz: normalmente se transcribe con Whisper en el webhook (main.py)
+    # y llega aquí ya como texto. Si la transcripción falló (sin clave, audio
+    # corrupto, error de API), msg.texto queda vacío → pedimos que escriban.
     if not contenido_usuario.strip() and es_audio and msg.media_url:
         contenido_usuario = (
-            "[El cliente envió una nota de voz, pero no puedo escucharla. "
+            "[El cliente envió una nota de voz, pero no pude entenderla. "
             "Pídele amablemente que te escriba el mensaje por texto.]"
         )
 

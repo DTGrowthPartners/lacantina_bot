@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     dario_base_url: str = "http://127.0.0.1:3456"
     dario_api_key: str = "dario"
 
+    # ── OpenAI (Whisper — transcripción de notas de voz) ────────────────────
+    openai_api_key: str = Field(default="")
+    whisper_model: str = "whisper-1"          # whisper-1 | gpt-4o-mini-transcribe | gpt-4o-transcribe
+    whisper_idioma: str = "es"                # hint de idioma → mejor precisión
+    feature_transcribir_audio: bool = True
+
     # ── whapi (canal WhatsApp de La Cantina) ────────────────────────────────
     whapi_base_url: str = "https://gate.whapi.cloud"
     whapi_token: str = Field(default="")

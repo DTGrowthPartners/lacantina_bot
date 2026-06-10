@@ -1125,6 +1125,21 @@ async def webhook(
 
         cliente = await get_or_create_cliente(session, msg.from_number, nombre=msg.from_name)
 
+        # ── Nota de voz → transcribir con Whisper (OpenAI) ───────────────────
+        # Mutamos msg.texto con la transcripción: así se persiste en el historial
+        # (visible en /admin), entra al contexto del bot y fluye como si el
+        # cliente hubiera escrito. Si falla, msg.texto queda vacío y el flow cae
+        # al fallback de pedir que escriban.
+        if msg.tipo == "audio" and msg.media_url and not (msg.texto or "").strip():
+            from app.integrations.whisper import transcribir_audio
+            transcripcion = await transcribir_audio(msg.media_url, msg.media_mime)
+            if transcripcion:
+                msg.texto = transcripcion
+                log.info("webhook.audio_transcrito", cliente=msg.from_number,
+                         chars=len(transcripcion))
+            else:
+                log.warning("webhook.audio_no_transcrito", cliente=msg.from_number)
+
         # ── Eventos sin contenido real (reactions, taps de botones Meta sin
         # texto, read receipts, edits vacíos, polls vacías, etc.)
         # NO los persistimos: saturaban el chat del admin con "[desconocido]"
