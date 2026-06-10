@@ -144,7 +144,8 @@ async def detalle_reserva(reserva_id: int | str) -> dict[str, Any]:
 async def actualizar_reserva(reserva_id: int | str, cambios: dict) -> dict[str, Any]:
     """PATCH /api/reservas/:id
 
-    `cambios` puede incluir: cover_estado (no_aplica/pendiente/anticipado/en_entrada),
+    `cambios` puede incluir: cover_estado
+    (no_aplica/pendiente/anticipado/en_entrada/invitado),
     estado (confirmada/cancelada), notas.
     """
     return await _request("PATCH", f"/api/reservas/{reserva_id}", json=cambios)

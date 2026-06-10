@@ -3,7 +3,7 @@
 Se invocan desde el grupo WhatsApp del equipo. Cubren:
 - Resumen del día (reservas, covers, recaudo)
 - Buscar / editar / cancelar reservas
-- Marcar covers (pagado anticipado / en entrada / pendiente)
+- Marcar covers (pagado anticipado / en entrada / pendiente / invitado)
 - Crear o editar eventos del día
 
 Todas las tools golpean el backend de mesas (`cantina_api.py`).
@@ -77,7 +77,9 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
         "name": "resumen_dia",
         "description": (
             "Resumen ejecutivo del día: # reservas, ocupación, cover esperado vs "
-            "anticipado/en_entrada/pendiente, salas. Para uso interno."
+            "anticipado/en_entrada/pendiente/invitado, salas. Los invitados no "
+            "cuentan en el recaudo esperado (el backend los rastrea aparte: "
+            "invitado, n_invitado, personas_invitadas). Para uso interno."
         ),
         "input_schema": {
             "type": "object",
@@ -164,7 +166,7 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
                 "reserva_id": {"type": "integer"},
                 "cover_estado": {
                     "type": "string",
-                    "enum": ["no_aplica", "pendiente", "anticipado", "en_entrada"],
+                    "enum": ["no_aplica", "pendiente", "anticipado", "en_entrada", "invitado"],
                 },
                 "estado": {"type": "string", "enum": ["confirmada", "cancelada"]},
                 "notas": {"type": "string"},
@@ -196,6 +198,21 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
     {
         "name": "marcar_cover_en_entrada",
         "description": "Marca el cover como 'paga en la entrada' (sin pago anticipado).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"reserva_id": {"type": "integer"}},
+            "required": ["reserva_id"],
+        },
+    },
+    {
+        "name": "marcar_cover_invitado",
+        "description": (
+            "Marca la reserva como INVITADO: el dueño invitó a ese grupo y NO paga "
+            "cover. No cuenta en el recaudo esperado. ÚSALO SOLO cuando el dueño/jefe "
+            "lo indique explícitamente (ej. 'la mesa de Juan va como invitada', 'a "
+            "esos no les cobres cover'). Nunca lo asumas por tu cuenta: si dudas, "
+            "deja el cover como estaba."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {"reserva_id": {"type": "integer"}},
@@ -363,6 +380,12 @@ async def handler_marcar_cover_en_entrada(args: dict, ctx: dict) -> dict:
     )
 
 
+async def handler_marcar_cover_invitado(args: dict, ctx: dict) -> dict:
+    return await cantina_api.actualizar_reserva(
+        args.get("reserva_id"), {"cover_estado": "invitado"},
+    )
+
+
 async def handler_crear_evento(args: dict, ctx: dict) -> dict:
     fecha = args.get("fecha")
     descripcion = args.get("descripcion")
@@ -517,6 +540,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "cancelar_reserva": handler_cancelar_reserva,
     "marcar_cover_pagado": handler_marcar_cover_pagado,
     "marcar_cover_en_entrada": handler_marcar_cover_en_entrada,
+    "marcar_cover_invitado": handler_marcar_cover_invitado,
     "crear_evento": handler_crear_evento,
     "guardar_flyer_evento": handler_guardar_flyer_evento,
     "borrar_evento": handler_borrar_evento,
