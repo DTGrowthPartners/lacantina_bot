@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -799,6 +800,17 @@ async def webhook_get() -> dict[str, str]:
     return {"status": "ready", "method": "GET", "note": "El webhook real recibe POST"}
 
 
+# Nombre del bot ("Nikki"/"Nicky") como wake word para interpelarlo en el grupo.
+# Clave para notas de voz: no pueden llevar @mención, así que el equipo lo nombra
+# hablando. Incluimos variantes que el transcriptor suele soltar (niki, niqui…).
+_WAKE_RE = re.compile(r"\bn[ií](?:kk|ck|qu|k|c)[iy]\b", re.IGNORECASE)
+
+
+def _menciona_nikki(texto: str | None) -> bool:
+    """True si el texto nombra al bot (Nikki/Nicky y variantes fonéticas)."""
+    return bool(_WAKE_RE.search(texto or ""))
+
+
 # ─── Webhook principal ──────────────────────────────────────────────────────
 
 
@@ -891,14 +903,27 @@ async def webhook(
                 # Sin esto, el bot procesa CADA mensaje del equipo (chistes,
                 # elogios "qué chimba", emojis, videos) y re-dispara la última
                 # acción (reenvía reservas/plano). Interpelar = @mención al bot,
-                # responder/citar un mensaje del bot, o ser el operador escribiendo
-                # desde el propio celular del bot (no puede mencionarse a sí mismo).
+                # responder/citar un mensaje del bot, ser el operador escribiendo
+                # desde el propio celular del bot, o NOMBRARLO ("Nikki ...").
                 es_operador_celular = msg.from_number == settings.whapi_numero_bot
                 bot_interpelado = (
                     es_operador_celular
                     or msg.menciona_a(settings.whapi_numero_bot)
                     or msg.quoted_from_me is True
+                    or _menciona_nikki(msg.texto)
                 )
+                # Nota de voz en el grupo: no puede llevar @mención, así que la
+                # transcribimos y vemos si nombran a Nikki. Mutamos msg.texto para
+                # no re-transcribir en flow_equipo y para persistir lo dicho.
+                if not bot_interpelado and msg.tipo == "audio" and msg.media_url:
+                    from app.integrations.whisper import transcribir_audio
+                    transcripcion = await transcribir_audio(msg.media_url, msg.media_mime)
+                    if transcripcion:
+                        msg.texto = transcripcion
+                        log.info("webhook.grupo_audio_transcrito",
+                                 miembro=miembro.nombre, chars=len(transcripcion))
+                        if _menciona_nikki(transcripcion):
+                            bot_interpelado = True
                 if not bot_interpelado:
                     log.info(
                         "webhook.grupo_equipo_no_interpelado",
