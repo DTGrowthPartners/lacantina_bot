@@ -265,6 +265,25 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "required": ["telefono", "mensaje"],
         },
     },
+    {
+        "name": "reenviar_comprobante_cliente",
+        "description": (
+            "Reenvía a ESTE chat (el grupo del equipo) la última IMAGEN que envió "
+            "un cliente — típicamente su comprobante de pago de cover. Úsalo cuando "
+            "el equipo diga 'reenvía el comprobante de +57...', 'pásame la imagen "
+            "que mandó X' o similar. SÍ tienes esta herramienta: recuperas la imagen "
+            "guardada del cliente y la mandas al grupo; NUNCA digas que toca hacerlo "
+            "manualmente. Necesitas el teléfono del cliente en formato +57...; si no "
+            "lo tienes, búscalo con consultar_reservas_del_dia."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "telefono": {"type": "string", "description": "Número del cliente, +57..."},
+            },
+            "required": ["telefono"],
+        },
+    },
 ]
 
 
@@ -407,6 +426,51 @@ async def handler_avisar_cliente(args: dict, ctx: dict) -> dict:
     return {"ok": True, "enviado_a": numero}
 
 
+async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
+    """Recupera la última imagen que mandó un cliente (su comprobante) y la
+    reenvía al chat actual (el grupo del equipo)."""
+    from app.db.repos import ultima_imagen_inbound
+    from app.whapi.parser import normalizar_numero
+    from app.whapi.client import auth_headers, enviar_imagen_bytes
+
+    tel = normalizar_numero((args.get("telefono") or "").strip())
+    if not tel:
+        return {"ok": False, "error": "telefono requerido en formato +57..."}
+    destino = ctx.get("destino_envio")
+    if not destino:
+        return {"ok": False, "error": "no hay chat destino para reenviar la imagen"}
+    session = ctx.get("session")
+    if session is None:
+        return {"ok": False, "error": "sin sesión de BD"}
+
+    conv = await ultima_imagen_inbound(session, tel)
+    if not conv or not conv.media_url:
+        return {"ok": False, "error": (
+            f"No encuentro ninguna imagen reciente enviada por {tel}. "
+            "Verifica el número o pídele al cliente que reenvíe el comprobante."
+        )}
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.get(conv.media_url, headers=auth_headers())
+        if r.status_code >= 400 or not r.content:
+            log.warning("tools_equipo.reenviar_comprobante.download_http",
+                        status=r.status_code, tel=tel)
+            return {"ok": False, "error": "no pude descargar la imagen del cliente (link expirado)"}
+        mime = r.headers.get("content-type") or "image/jpeg"
+        await enviar_imagen_bytes(
+            destino, r.content, mime=mime,
+            caption=f"📎 Comprobante de {tel} (reenviado al grupo)",
+        )
+    except Exception as e:
+        log.warning("tools_equipo.reenviar_comprobante.fail", tel=tel, error=str(e))
+        return {"ok": False, "error": f"no se pudo reenviar la imagen: {str(e)[:160]}"}
+    log.info("tools_equipo.reenviar_comprobante_cliente", tel=tel, destino=destino)
+    return {"ok": True, "nota": f"Comprobante de {tel} reenviado a este grupo. "
+                                "Confírmalo brevemente en tu texto."}
+
+
 async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
     """Manda la foto del plano del salón al chat actual (grupo o personal)."""
     # Dedup intra-turno: una sola foto por mensaje (evita reenvíos en el tool-loop).
@@ -457,6 +521,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "guardar_flyer_evento": handler_guardar_flyer_evento,
     "borrar_evento": handler_borrar_evento,
     "avisar_cliente": handler_avisar_cliente,
+    "reenviar_comprobante_cliente": handler_reenviar_comprobante_cliente,
 }
 
 

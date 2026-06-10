@@ -276,6 +276,33 @@ async def ultimos_mensajes(
     return list(reversed(rows))
 
 
+async def ultima_imagen_inbound(
+    session: AsyncSession,
+    numero: str,
+    horas_max: int = 240,
+) -> Conversacion | None:
+    """Última imagen que ENVIÓ un cliente (ej. su comprobante de pago).
+
+    Busca por número de WhatsApp del cliente la conversación inbound más
+    reciente de tipo imagen con media_url. Sirve para que el equipo pida
+    'reenvía el comprobante de +57...' y el bot lo recupere y reenvíe al grupo.
+    Devuelve None si no hay (o si está fuera de la ventana `horas_max`).
+    """
+    desde = datetime.now(timezone.utc) - timedelta(hours=horas_max)
+    stmt = (
+        select(Conversacion)
+        .join(Cliente, Cliente.id == Conversacion.cliente_id)
+        .where(Cliente.numero_whatsapp == numero)
+        .where(Conversacion.direccion == "inbound")
+        .where(Conversacion.tipo == "imagen")
+        .where(Conversacion.media_url.isnot(None))
+        .where(Conversacion.timestamp > desde)
+        .order_by(Conversacion.timestamp.desc())
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
 # ── SESIONES ──────────────────────────────────────────────────────────────────
 
 
