@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.logging_setup import log
@@ -43,6 +44,21 @@ class MensajeWhapi:
     # `referral` cuando el chat se inició desde un anuncio. Señal confiable de
     # que la conversación viene de la pauta. None si no vino de un anuncio.
     referral: dict[str, Any] | None = None
+    # Menciones (@) del mensaje, como dígitos del número sin '+' (ej.
+    # ['573008641322']). whapi las entrega en `context.mentions`. Se usa en los
+    # grupos para saber si AL BOT lo interpelaron (y no responder a todo).
+    mentions: list[str] = field(default_factory=list)
+
+    def menciona_a(self, numero: str | None) -> bool:
+        """True si este mensaje @menciona el número dado (compara solo dígitos,
+        con tolerancia a prefijos: matchea por igualdad o por últimos 10)."""
+        objetivo = re.sub(r"\D", "", numero or "")
+        if not objetivo or not self.mentions:
+            return False
+        return any(
+            m and (m == objetivo or m[-10:] == objetivo[-10:])
+            for m in self.mentions
+        )
 
 
 # whapi payload events:
@@ -270,6 +286,13 @@ def parsear_mensaje(msg: dict[str, Any]) -> MensajeWhapi | None:
         ctx_ref = ctx.get("referral") if isinstance(ctx, dict) else None
         referral = ctx_ref if isinstance(ctx_ref, dict) else None
 
+    # Menciones (@): whapi las entrega en `context.mentions` (lista de números
+    # sin '+'); fallback a `mentions` top-level. Las normalizamos a dígitos.
+    ment_raw = (ctx.get("mentions") if isinstance(ctx, dict) else None) or msg.get("mentions")
+    mentions: list[str] = []
+    if isinstance(ment_raw, list):
+        mentions = [d for x in ment_raw if (d := re.sub(r"\D", "", str(x)))]
+
     return MensajeWhapi(
         id=str(msg_id),
         from_number=from_n,
@@ -290,6 +313,7 @@ def parsear_mensaje(msg: dict[str, Any]) -> MensajeWhapi | None:
         quoted_from_me=quoted_from_me,
         from_name=from_name,
         referral=referral,
+        mentions=mentions,
     )
 
 

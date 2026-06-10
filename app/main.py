@@ -887,6 +887,27 @@ async def webhook(
                     resultados.append({"id": msg.id, "status": accion_resuelta})
                     continue
 
+                # ── Gate: en el grupo SOLO respondemos si AL BOT lo interpelan ──
+                # Sin esto, el bot procesa CADA mensaje del equipo (chistes,
+                # elogios "qué chimba", emojis, videos) y re-dispara la última
+                # acción (reenvía reservas/plano). Interpelar = @mención al bot,
+                # responder/citar un mensaje del bot, o ser el operador escribiendo
+                # desde el propio celular del bot (no puede mencionarse a sí mismo).
+                es_operador_celular = msg.from_number == settings.whapi_numero_bot
+                bot_interpelado = (
+                    es_operador_celular
+                    or msg.menciona_a(settings.whapi_numero_bot)
+                    or msg.quoted_from_me is True
+                )
+                if not bot_interpelado:
+                    log.info(
+                        "webhook.grupo_equipo_no_interpelado",
+                        miembro=miembro.nombre, from_=msg.from_number,
+                        preview=(msg.texto or "")[:60],
+                    )
+                    resultados.append({"id": msg.id, "status": "group_no_mention_ignored"})
+                    continue
+
                 log.info("webhook.grupo_equipo_msg", miembro=miembro.nombre, from_=msg.from_number)
                 resultados.append({"id": msg.id, "status": "group_routed", "miembro": miembro.nombre})
                 _track_task(asyncio.create_task(
