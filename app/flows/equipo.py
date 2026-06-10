@@ -133,10 +133,19 @@ async def procesar_mensaje_equipo(
     destino_envio = responder_a or miembro.numero_whatsapp
     instruccion = (msg.texto or "").strip()
 
-    # Nota de voz: no hay transcripción configurada en La Cantina; pedimos que
-    # escriban la instrucción por texto.
+    # Nota de voz → transcribir con Whisper (OpenAI). Mutamos msg.texto para que
+    # también quede persistido en el historial del equipo.
     if not instruccion and msg.tipo == "audio" and msg.media_url:
-        instruccion = "[Llegó una nota de voz pero no puedo transcribirla; pide la instrucción por texto.]"
+        from app.integrations.whisper import transcribir_audio
+        transcripcion = await transcribir_audio(msg.media_url, msg.media_mime)
+        if transcripcion:
+            msg.texto = transcripcion
+            instruccion = transcripcion
+            log.info("flow_equipo.audio_transcrito", miembro=miembro.nombre,
+                     chars=len(transcripcion))
+        else:
+            log.warning("flow_equipo.audio_no_transcrito", miembro=miembro.nombre)
+            instruccion = "[Llegó una nota de voz pero no pude entenderla; pide la instrucción por texto.]"
 
     # Si llega una imagen sin texto, igual procesamos (multimodal) — el equipo
     # a veces manda foto de un comprobante, etc.
