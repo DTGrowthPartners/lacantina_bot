@@ -126,6 +126,28 @@ async def _enviar_plano_espacio(session: AsyncSession, cliente_id: int, cliente_
         log.warning("flow.plano_espacio.fail", error=str(e))
 
 
+async def _enviar_estado_actual(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
+    """Envía al cliente la imagen del estado/promo vigente (tras el texto)."""
+    from app import promo_estado
+    estado = promo_estado.cargar_estado()
+    if estado is None:
+        log.info("flow.estado_actual.sin_estado", cliente=cliente_numero)
+        return
+    path, caption = estado
+    try:
+        await enviar_imagen_bytes(
+            cliente_numero, path.read_bytes(), mime=promo_estado.mime_de(path),
+            filename=path.name, caption=caption or "📸 ¡Esto es lo último de La Cantina Plus! 🎶",
+        )
+        await guardar_conversacion(
+            session, cliente_id=cliente_id, direccion="outbound", tipo="imagen",
+            contenido="[estado/promo vigente]", metadata={"media": "estado_actual"},
+        )
+        log.info("flow.estado_actual.enviado", cliente=cliente_numero)
+    except Exception as e:
+        log.warning("flow.estado_actual.fail", error=str(e))
+
+
 async def _enviar_video_como_llegar(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
     """Envía el video de cómo llegar al cliente (tras el texto de la dirección)."""
     if not _VIDEO_COMO_LLEGAR.exists():
@@ -347,6 +369,8 @@ async def procesar_mensaje_inbound(
         await _enviar_carta_pdf(session, cliente_id, cliente_numero)
     if ctx.get("enviar_plano_espacio"):
         await _enviar_plano_espacio(session, cliente_id, cliente_numero)
+    if ctx.get("enviar_estado_actual"):
+        await _enviar_estado_actual(session, cliente_id, cliente_numero)
     if ctx.get("flyer_evento_fecha"):
         await _enviar_flyer_evento(session, cliente_id, cliente_numero, ctx["flyer_evento_fecha"])
 

@@ -289,6 +289,23 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
         },
     },
     {
+        "name": "publicar_estado",
+        "description": (
+            "Publica la IMAGEN ADJUNTA como estado de WhatsApp de La Cantina Y la "
+            "guarda como 'estado vigente' para que el bot pueda reenviárselo a los "
+            "clientes que lo pidan. Úsalo cuando el equipo mande una imagen diciendo "
+            "'publica esto como estado', 'sube este estado', 'pon esta promo', etc. "
+            "Requiere que el equipo haya adjuntado una imagen en el mensaje. Si "
+            "incluyen un texto para acompañar la promo, pásalo en `caption`."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "caption": {"type": "string", "description": "Texto opcional para acompañar el estado/promo"},
+            },
+        },
+    },
+    {
         "name": "reenviar_comprobante_cliente",
         "description": (
             "Reenvía a ESTE chat (el grupo del equipo) la última IMAGEN que envió "
@@ -456,6 +473,34 @@ async def handler_avisar_cliente(args: dict, ctx: dict) -> dict:
     return {"ok": True, "enviado_a": numero}
 
 
+async def handler_publicar_estado(args: dict, ctx: dict) -> dict:
+    """Publica la imagen adjunta como estado de WhatsApp y la guarda como vigente."""
+    imagen_bytes = ctx.get("imagen_bytes")
+    if not imagen_bytes:
+        return {"ok": False, "error": "No recibí ninguna imagen. Adjunta la imagen del "
+                                      "estado en el mismo mensaje."}
+    mime = ctx.get("imagen_mime") or "image/jpeg"
+    caption = (args.get("caption") or "").strip() or None
+    from app.whapi.client import publicar_story_imagen_bytes
+    from app import promo_estado
+    # 1. Publicar como estado de WhatsApp.
+    try:
+        await publicar_story_imagen_bytes(imagen_bytes, caption=caption, mime=mime)
+    except Exception as e:
+        log.warning("tools_equipo.publicar_estado.story_fail", error=str(e))
+        return {"ok": False, "error": f"no pude publicar el estado: {str(e)[:160]}"}
+    # 2. Guardar como estado vigente (para reenviar a clientes).
+    try:
+        promo_estado.guardar_estado(imagen_bytes, mime, caption)
+    except Exception as e:
+        log.warning("tools_equipo.publicar_estado.guardar_fail", error=str(e))
+        return {"ok": True, "nota": "Estado publicado, pero no pude guardarlo para "
+                                    "reenviar a clientes. Avísale al admin."}
+    log.info("tools_equipo.publicar_estado", por=ctx.get("miembro_nombre"))
+    return {"ok": True, "nota": "Estado publicado en WhatsApp y guardado. Ahora el bot "
+                                "puede reenviárselo a los clientes que pregunten por la promo/estado."}
+
+
 async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
     """Recupera la última imagen que mandó un cliente (su comprobante) y la
     reenvía al chat actual (el grupo del equipo)."""
@@ -553,6 +598,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "borrar_evento": handler_borrar_evento,
     "avisar_cliente": handler_avisar_cliente,
     "reenviar_comprobante_cliente": handler_reenviar_comprobante_cliente,
+    "publicar_estado": handler_publicar_estado,
 }
 
 

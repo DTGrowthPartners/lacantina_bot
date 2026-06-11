@@ -228,6 +228,18 @@ TOOL_DEFINITIONS: list[dict] = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "enviar_estado_actual",
+        "description": (
+            "Envía al cliente la IMAGEN del estado/promo vigente de La Cantina (lo "
+            "último que el equipo publicó en el estado de WhatsApp). Úsalo cuando el "
+            "cliente pida 'el estado', 'la promo', 'la imagen que subieron', 'lo que "
+            "publicaron', el flyer de la promo, etc. Si NO hay un estado vigente "
+            "guardado, la tool te lo dirá: en ese caso avísale con amabilidad que por "
+            "ahora no hay una promo publicada. Acompaña la imagen con un texto breve."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "escalar_a_equipo",
         "description": (
             "Avisa al equipo cuando el caso está fuera de alcance: queja, evento privado, "
@@ -478,6 +490,19 @@ async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
     }
 
 
+async def handler_enviar_estado_actual(args: dict, ctx: dict) -> dict:
+    """Marca que hay que enviar la imagen del estado/promo vigente (tras el texto).
+    Si no hay estado guardado, lo informa para que el bot avise al cliente."""
+    from app import promo_estado
+    if promo_estado.cargar_estado() is None:
+        return {"ok": False, "sin_estado": True,
+                "nota": "No hay un estado/promo vigente guardado. Avísale al cliente "
+                        "con amabilidad que por ahora no hay una promo publicada."}
+    ctx["enviar_estado_actual"] = True
+    log.info("tools.enviar_estado_actual", cliente=ctx.get("cliente_numero"))
+    return {"ok": True, "nota": "La imagen del estado/promo se enviará junto con tu respuesta."}
+
+
 async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
     # Dedup intra-turno: Claude a veces llama esta tool varias veces dentro del
     # mismo tool-loop (hasta 5 rondas) → reenviaba el MISMO aviso al grupo 5
@@ -521,6 +546,7 @@ HANDLERS: dict[str, Handler] = {
     "enviar_como_llegar": handler_enviar_como_llegar,
     "enviar_carta": handler_enviar_carta,
     "enviar_plano_espacio": handler_enviar_plano_espacio,
+    "enviar_estado_actual": handler_enviar_estado_actual,
     "escalar_a_equipo": handler_escalar_a_equipo,
 }
 
