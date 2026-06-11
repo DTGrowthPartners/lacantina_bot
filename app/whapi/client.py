@@ -54,6 +54,28 @@ class WhapiError(Exception):
     pass
 
 
+async def estado_cuenta() -> dict[str, Any]:
+    """GET /health — estado de la sesión de WhatsApp del canal (whapi).
+
+    Devuelve `{'conectado': bool, 'estado': str}` (best-effort; nunca lanza).
+    """
+    url = f"{settings.whapi_base_url}/health"
+    try:
+        async with httpx.AsyncClient(timeout=8) as c:
+            r = await c.get(url, headers=_headers())
+            data = r.json() if r.status_code < 400 else {}
+    except Exception as e:
+        log.warning("whapi.estado_cuenta.fail", error=str(e)[:160])
+        return {"conectado": False, "estado": "desconocido", "error": str(e)[:120]}
+    status = data.get("status") if isinstance(data, dict) else None
+    if isinstance(status, dict):
+        texto = str(status.get("text") or "")
+    else:
+        texto = str(status or "")
+    conectado = texto.upper() in ("AUTH", "AUTHENTICATED", "CONNECTED", "READY")
+    return {"conectado": conectado, "estado": texto or "desconocido"}
+
+
 async def listar_grupos(count: int = 100) -> list[dict[str, Any]]:
     """GET /groups — grupos de WhatsApp donde está el canal del bot."""
     url = f"{settings.whapi_base_url}/groups"

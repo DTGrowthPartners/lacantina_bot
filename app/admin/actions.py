@@ -774,6 +774,11 @@ async def toggle_bot(
         ))
     await session.commit()
     log.warning("admin.bot.toggle", nuevo_estado="activo" if nuevo_estado else "pausado")
+    try:
+        from app.webhooks_salientes import emitir_evento
+        await emitir_evento("bot.estado_cambiado", {"activo": nuevo_estado, "origen": "dashboard"})
+    except Exception:
+        pass
     return RedirectResponse("/admin?msg=bot_toggle", status_code=303)
 
 

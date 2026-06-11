@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     feature_humanizacion: bool = True
     feature_responder_24_7: bool = True       # opera tarde/noche, no cerramos
 
+    # ── API externa / plataforma de administración ──────────────────────────
+    # Permite a una plataforma externa: activar/desactivar el bot, ver stats y
+    # health, y recibir webhooks salientes firmados (HMAC-SHA256).
+    bot_id: str = "cantina-plus"               # identifica ESTE bot ante la plataforma
+    control_api_key: str = Field(default="")   # Bearer para /api/v1/* (vacío = API deshabilitada)
+    webhook_url: str = Field(default="")       # URL de la plataforma para push (vacío = sin push)
+    webhook_secret: str = Field(default="")    # secreto HMAC de los webhooks salientes
+
     # ── Admin panel ────────────────────────────────────────────────────────
     admin_user: str = "admin"
     admin_password: str = "cambiame_en_env"

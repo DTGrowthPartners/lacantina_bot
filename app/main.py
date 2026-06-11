@@ -29,6 +29,7 @@ from app.admin.contexto import router as contexto_router
 from app.admin.estados import router as estados_router
 from app.admin.automatizaciones import router as automatizaciones_router
 from app.admin.views import ALL_VIEWS
+from app.api_externa import router as api_externa_router
 from app.config import get_settings
 from app.db.repos import (
     bot_pausado,
@@ -141,6 +142,7 @@ app.include_router(grupos_router)
 app.include_router(etiquetas_router)
 app.include_router(estados_router)
 app.include_router(automatizaciones_router)
+app.include_router(api_externa_router)
 
 # SQLAdmin: CRUD automático sobre todos los modelos
 admin = Admin(
@@ -1378,6 +1380,12 @@ async def _drain_outbox(outbox: list[dict]) -> None:
         return
     import time
     from app.notif_equipo import notificar_equipo
+    from app.webhooks_salientes import emitir_evento
+    # tipo del item del outbox → nombre del evento del webhook saliente.
+    _EVENTO_WEBHOOK = {
+        "reserva_nueva": "reserva.creada",
+        "comprobante_cover": "comprobante.recibido",
+    }
     for item in outbox:
         # Throttle de escalaciones: si ya avisamos por este cliente hace poco,
         # no repetimos al grupo (las reservas/comprobantes NO se throttlean).
@@ -1389,6 +1397,15 @@ async def _drain_outbox(outbox: list[dict]) -> None:
                 log.info("flow.outbox.escalacion_throttled", cliente=num)
                 continue
             _ULTIMA_ESCALACION[num] = ahora
+        # Webhook saliente a la plataforma externa (best-effort, no rompe nada).
+        evento = "escalacion" if item.get("clase") == "escalacion" else _EVENTO_WEBHOOK.get(item.get("tipo"))
+        if evento:
+            await emitir_evento(evento, {
+                "tipo": item.get("tipo"),
+                "mensaje": item.get("mensaje"),
+                "cliente_numero": item.get("cliente_numero"),
+                "media_url": item.get("media_url"),
+            })
         # Formato del flujo cliente: {tipo, mensaje, ...} → grupo del equipo.
         mensaje = item.get("mensaje") or item.get("text")
         if mensaje:

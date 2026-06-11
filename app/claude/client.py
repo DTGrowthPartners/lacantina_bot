@@ -154,6 +154,16 @@ async def conversar(
                     )
             except Exception as e2:
                 log.warning("claude.api_fail.alerta_fail", error=str(e2)[:120])
+            # Webhook saliente a la plataforma externa (best-effort).
+            try:
+                from app.webhooks_salientes import emitir_evento
+                await emitir_evento("alerta", {
+                    "tipo": "claude_api_fail",
+                    "cliente_numero": cliente_n,
+                    "detalle": str(e)[:300],
+                })
+            except Exception:
+                pass
             respuesta.texto = ""
             return respuesta
 
