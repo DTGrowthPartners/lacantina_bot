@@ -291,12 +291,12 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
     {
         "name": "publicar_estado",
         "description": (
-            "Publica la IMAGEN ADJUNTA como estado de WhatsApp de La Cantina Y la "
-            "guarda como 'estado vigente' para que el bot pueda reenviárselo a los "
-            "clientes que lo pidan. Úsalo cuando el equipo mande una imagen diciendo "
-            "'publica esto como estado', 'sube este estado', 'pon esta promo', etc. "
-            "Requiere que el equipo haya adjuntado una imagen en el mensaje. Si "
-            "incluyen un texto para acompañar la promo, pásalo en `caption`."
+            "Publica la IMAGEN o VIDEO ADJUNTO como estado de WhatsApp de La Cantina "
+            "Y lo guarda como 'estado vigente' para que el bot pueda reenviárselo a "
+            "los clientes que lo pidan. Úsalo cuando el equipo mande una imagen o un "
+            "video diciendo 'publica esto como estado', 'sube este estado', 'pon esta "
+            "promo', etc. Requiere que el equipo haya adjuntado una imagen o video en "
+            "el mensaje. Si incluyen un texto para acompañar la promo, pásalo en `caption`."
         ),
         "input_schema": {
             "type": "object",
@@ -474,31 +474,37 @@ async def handler_avisar_cliente(args: dict, ctx: dict) -> dict:
 
 
 async def handler_publicar_estado(args: dict, ctx: dict) -> dict:
-    """Publica la imagen adjunta como estado de WhatsApp y la guarda como vigente."""
+    """Publica la imagen/video adjunto como estado de WhatsApp y lo guarda como vigente."""
     imagen_bytes = ctx.get("imagen_bytes")
-    if not imagen_bytes:
-        return {"ok": False, "error": "No recibí ninguna imagen. Adjunta la imagen del "
-                                      "estado en el mismo mensaje."}
-    mime = ctx.get("imagen_mime") or "image/jpeg"
+    video_bytes = ctx.get("video_bytes")
+    if not imagen_bytes and not video_bytes:
+        return {"ok": False, "error": "No recibí ninguna imagen ni video. Adjunta el "
+                                      "contenido del estado en el mismo mensaje."}
     caption = (args.get("caption") or "").strip() or None
-    from app.whapi.client import publicar_story_imagen_bytes
     from app import promo_estado
-    # 1. Publicar como estado de WhatsApp.
+    from app.whapi.client import publicar_story_imagen_bytes, publicar_story_video_bytes
+    # 1. Publicar como estado de WhatsApp (video tiene prioridad si llegan ambos).
     try:
-        await publicar_story_imagen_bytes(imagen_bytes, caption=caption, mime=mime)
+        if video_bytes:
+            data, mime = video_bytes, (ctx.get("video_mime") or "video/mp4")
+            await publicar_story_video_bytes(data, caption=caption, mime=mime)
+        else:
+            data, mime = imagen_bytes, (ctx.get("imagen_mime") or "image/jpeg")
+            await publicar_story_imagen_bytes(data, caption=caption, mime=mime)
     except Exception as e:
         log.warning("tools_equipo.publicar_estado.story_fail", error=str(e))
         return {"ok": False, "error": f"no pude publicar el estado: {str(e)[:160]}"}
     # 2. Guardar como estado vigente (para reenviar a clientes).
     try:
-        promo_estado.guardar_estado(imagen_bytes, mime, caption)
+        promo_estado.guardar_estado(data, mime, caption)
     except Exception as e:
         log.warning("tools_equipo.publicar_estado.guardar_fail", error=str(e))
         return {"ok": True, "nota": "Estado publicado, pero no pude guardarlo para "
                                     "reenviar a clientes. Avísale al admin."}
-    log.info("tools_equipo.publicar_estado", por=ctx.get("miembro_nombre"))
-    return {"ok": True, "nota": "Estado publicado en WhatsApp y guardado. Ahora el bot "
-                                "puede reenviárselo a los clientes que pregunten por la promo/estado."}
+    tipo = "video" if video_bytes else "imagen"
+    log.info("tools_equipo.publicar_estado", por=ctx.get("miembro_nombre"), tipo=tipo)
+    return {"ok": True, "nota": f"Estado ({tipo}) publicado en WhatsApp y guardado. Ahora el "
+                                "bot puede reenviárselo a los clientes que pregunten por la promo/estado."}
 
 
 async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:

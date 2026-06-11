@@ -134,16 +134,25 @@ async def _enviar_estado_actual(session: AsyncSession, cliente_id: int, cliente_
         log.info("flow.estado_actual.sin_estado", cliente=cliente_numero)
         return
     path, caption = estado
+    cap = caption or "📸 ¡Esto es lo último de La Cantina Plus! 🎶"
     try:
-        await enviar_imagen_bytes(
-            cliente_numero, path.read_bytes(), mime=promo_estado.mime_de(path),
-            filename=path.name, caption=caption or "📸 ¡Esto es lo último de La Cantina Plus! 🎶",
-        )
+        if promo_estado.es_video(path):
+            await enviar_video_bytes(
+                cliente_numero, path.read_bytes(), mime=promo_estado.mime_de(path),
+                filename=path.name, caption=cap,
+            )
+            tipo = "video"
+        else:
+            await enviar_imagen_bytes(
+                cliente_numero, path.read_bytes(), mime=promo_estado.mime_de(path),
+                filename=path.name, caption=cap,
+            )
+            tipo = "imagen"
         await guardar_conversacion(
-            session, cliente_id=cliente_id, direccion="outbound", tipo="imagen",
+            session, cliente_id=cliente_id, direccion="outbound", tipo=tipo,
             contenido="[estado/promo vigente]", metadata={"media": "estado_actual"},
         )
-        log.info("flow.estado_actual.enviado", cliente=cliente_numero)
+        log.info("flow.estado_actual.enviado", cliente=cliente_numero, tipo=tipo)
     except Exception as e:
         log.warning("flow.estado_actual.fail", error=str(e))
 

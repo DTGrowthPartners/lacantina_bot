@@ -355,6 +355,29 @@ async def publicar_story_imagen_bytes(
         return r.json()
 
 
+async def publicar_story_video_bytes(
+    video_bytes: bytes,
+    caption: str | None = None,
+    filename: str = "story.mp4",
+    mime: str = "video/mp4",
+) -> dict[str, Any]:
+    """Publica un VIDEO como story via multipart upload.
+
+    Usa el mismo endpoint media de whapi (acepta imagen y video). WhatsApp
+    recorta los videos largos en varios estados automáticamente.
+    """
+    url = f"{settings.whapi_base_url}/stories/send/media"
+    files = {"media": (filename, video_bytes, mime)}
+    data = {}
+    if caption:
+        data["caption"] = caption
+    async with httpx.AsyncClient(timeout=120) as c:
+        r = await c.post(url, files=files, data=data, headers=_headers())
+        if r.status_code >= 400:
+            raise WhapiError(f"publicar_story_video_bytes: {r.status_code} {r.text}")
+        return r.json()
+
+
 async def publicar_story_imagen_url(image_url: str, caption: str | None = None) -> dict[str, Any]:
     """Descarga la imagen desde URL y la publica como story (whapi no acepta
     URLs externas directas en /stories/send/media — necesita multipart o

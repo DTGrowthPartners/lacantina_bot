@@ -234,6 +234,21 @@ async def procesar_mensaje_equipo(
         except Exception as e:
             log.warning("flow_equipo.imagen.fail_download", error=str(e))
 
+    # Descargar video si llegó (p. ej. para publicarlo como estado de WhatsApp).
+    video_bytes: bytes | None = None
+    video_mime: str | None = None
+    if msg.tipo == "video" and msg.media_url:
+        try:
+            async with httpx.AsyncClient(timeout=60) as c:
+                r = await c.get(msg.media_url, headers=auth_headers())
+                if r.status_code < 400 and len(r.content) <= 64 * 1024 * 1024:
+                    video_bytes = r.content
+                    video_mime = msg.media_mime or "video/mp4"
+                    log.info("flow_equipo.video.descargado",
+                             miembro=miembro.nombre, bytes=len(r.content))
+        except Exception as e:
+            log.warning("flow_equipo.video.fail_download", error=str(e))
+
     # 1. Construir contexto operativo + memoria evolutiva
     contexto = await _construir_contexto(session)
     from app import memoria as mem
@@ -321,6 +336,9 @@ async def procesar_mensaje_equipo(
         # para guardar el flyer cuando Fabio manda "crea este evento con su flyer".
         "imagen_bytes": imagen_bytes,
         "imagen_mime": imagen_mime,
+        # Video adjunto (si lo hay) — lo usa publicar_estado para subir video al estado.
+        "video_bytes": video_bytes,
+        "video_mime": video_mime,
     }
 
     tokens_in = tokens_out = cache_r = cache_w = 0
