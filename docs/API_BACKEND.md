@@ -63,7 +63,7 @@ Devuelve TODO el contexto del día:
 | POST | `/api/reservas/grupo` | Reserva grupo sobre varias mesas vecinas (valida contigüidad). |
 | GET | `/api/reservas?fecha=YYYY-MM-DD` | Listar reservas del día. `&incluir_canceladas=true` opcional. |
 | GET | `/api/reservas/:id` | Detalle. |
-| PATCH | `/api/reservas/:id` | Editar `cover_estado`, `estado`, `notas`. |
+| PATCH | `/api/reservas/:id` | Editar `cover_estado`, `estado`, `notas`, `num_personas`, `nombre_cliente`, `telefono`, `monto_cover`. (Cambiar `num_personas` NO reasigna/valida la mesa.) |
 | DELETE | `/api/reservas/:id` | Cancelar (soft delete → `cancelada`, libera mesa). |
 | DELETE | `/api/reservas/grupo/:grupoId` | Liberar grupo completo. |
 

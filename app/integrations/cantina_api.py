@@ -146,7 +146,8 @@ async def actualizar_reserva(reserva_id: int | str, cambios: dict) -> dict[str, 
 
     `cambios` puede incluir: cover_estado
     (no_aplica/pendiente/anticipado/en_entrada/invitado),
-    estado (confirmada/cancelada), notas.
+    estado (confirmada/cancelada), notas, num_personas, nombre_cliente,
+    telefono, monto_cover. Nota: cambiar num_personas NO reasigna/valida mesa.
     """
     return await _request("PATCH", f"/api/reservas/{reserva_id}", json=cambios)
 

@@ -157,8 +157,11 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
     {
         "name": "actualizar_reserva",
         "description": (
-            "Edita una reserva. Cambios admitidos: cover_estado, estado, notas. "
-            "Para cancelar prefiere `cancelar_reserva`."
+            "Edita una reserva. Cambios admitidos: cover_estado, estado, notas, "
+            "num_personas, nombre_cliente, telefono. Para cancelar prefiere "
+            "`cancelar_reserva`. OJO: cambiar num_personas NO reasigna ni valida "
+            "la mesa — si el grupo ya no cabe en su(s) mesa(s), avísale al equipo "
+            "que quizá toque mover la reserva."
         ),
         "input_schema": {
             "type": "object",
@@ -170,6 +173,9 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
                 },
                 "estado": {"type": "string", "enum": ["confirmada", "cancelada"]},
                 "notas": {"type": "string"},
+                "num_personas": {"type": "integer", "description": "Nueva cantidad de personas (≥1)"},
+                "nombre_cliente": {"type": "string", "description": "Corregir el nombre del cliente"},
+                "telefono": {"type": "string", "description": "Corregir el teléfono, +57..."},
             },
             "required": ["reserva_id"],
         },
@@ -358,7 +364,8 @@ async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
 
 
 async def handler_actualizar_reserva(args: dict, ctx: dict) -> dict:
-    cambios = {k: args[k] for k in ("cover_estado", "estado", "notas") if args.get(k) is not None}
+    campos = ("cover_estado", "estado", "notas", "num_personas", "nombre_cliente", "telefono")
+    cambios = {k: args[k] for k in campos if args.get(k) is not None}
     if not cambios:
         return {"ok": False, "error": "Sin cambios a aplicar"}
     return await cantina_api.actualizar_reserva(args.get("reserva_id"), cambios)
