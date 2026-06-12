@@ -288,6 +288,16 @@ async def handler_consultar_disponibilidad(args: dict, ctx: dict) -> dict:
                 "`crear_reserva_grupo`) o una SALA PRIVADA. NUNCA digas que no hay "
                 "disponibilidad ni que está lleno."
             )
+        # Si el cliente ya tiene reserva para esta fecha, señalarlo claramente para
+        # que el bot no confunda su propia mesa ocupada con una mesa ajena. 🚫
+        ya = await _cliente_ya_reservo(fecha, ctx.get("cliente_numero"))
+        if ya:
+            res["reserva_propia"] = ya
+            res["nota_reserva_propia"] = (
+                f"ATENCIÓN: este cliente YA tiene reserva confirmada para {fecha} "
+                f"en mesa(s) {ya}. NO ofrezcas más mesas ni digas que están ocupadas: "
+                "confírmale su reserva existente y pregunta si necesita algo más."
+            )
     return res
 
 
