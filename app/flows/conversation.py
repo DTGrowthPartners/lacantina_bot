@@ -99,22 +99,46 @@ async def _enviar_link_menu(session: AsyncSession, cliente_id: int, cliente_nume
         log.warning("flow.menu_link.fail", error=str(e))
 
 
-async def _enviar_plano_espacio(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
-    """Envía la foto del plano/distribución del salón al cliente (tras el texto)."""
+async def _enviar_plano_espacio(
+    session: AsyncSession, cliente_id: int, cliente_numero: str, fecha: str | None = None
+) -> None:
+    """Envía el plano del salón con las mesas reservadas marcadas en rojo."""
     if not _PLANO_ESPACIO.exists():
         log.warning("flow.plano_espacio.no_existe", path=str(_PLANO_ESPACIO))
         return
     try:
+        from app.utils.plano import generar_plano_con_reservas
+        from app.integrations import cantina_api
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        if not fecha:
+            fecha = datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
+
+        # Obtener mesas ya reservadas para esa fecha
+        mesas_reservadas: list[int] = []
+        try:
+            disp = await cantina_api.disponibilidad(fecha)
+            ocupadas = (disp.get("ocupacion") or {}).get("ocupadas") or []
+            mesas_reservadas = [int(m) for m in ocupadas if str(m).isdigit()]
+        except Exception as e:
+            log.warning("flow.plano_espacio.disponibilidad_fail", error=str(e))
+
+        png_bytes = generar_plano_con_reservas(mesas_reservadas)
+        if png_bytes is None:
+            png_bytes = _PLANO_ESPACIO.read_bytes()
+
+        cap = f"🗺️ Plano del salón — {fecha} (🔴 = ya reservada) ¡Escoge tu mesa!"
         await enviar_imagen_bytes(
-            cliente_numero, _PLANO_ESPACIO.read_bytes(), mime="image/png",
-            filename="plano-espacio.png",
-            caption="🗺️ Así es nuestro salón 🎶 ¡Escoge tu mesa!",
+            cliente_numero, png_bytes, mime="image/png",
+            filename="plano-espacio.png", caption=cap,
         )
         await guardar_conversacion(
             session, cliente_id=cliente_id, direccion="outbound", tipo="imagen",
-            contenido="[plano del salón]", metadata={"media": "plano_espacio"},
+            contenido="[plano del salón con reservas]", metadata={"media": "plano_espacio"},
         )
-        log.info("flow.plano_espacio.enviado", cliente=cliente_numero)
+        log.info("flow.plano_espacio.enviado", cliente=cliente_numero,
+                 fecha=fecha, reservadas=len(mesas_reservadas))
     except Exception as e:
         log.warning("flow.plano_espacio.fail", error=str(e))
 
@@ -370,7 +394,7 @@ async def procesar_mensaje_inbound(
     if ctx.get("enviar_carta_pdf"):
         await _enviar_link_menu(session, cliente_id, cliente_numero)
     if ctx.get("enviar_plano_espacio"):
-        await _enviar_plano_espacio(session, cliente_id, cliente_numero)
+        await _enviar_plano_espacio(session, cliente_id, cliente_numero, ctx.get("plano_fecha"))
     if ctx.get("enviar_estado_actual"):
         await _enviar_estado_actual(session, cliente_id, cliente_numero)
     if ctx.get("flyer_evento_fecha"):

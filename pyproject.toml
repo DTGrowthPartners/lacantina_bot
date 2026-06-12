@@ -35,6 +35,9 @@ dependencies = [
     "itsdangerous>=2.1",
     "jinja2>=3.1",
 
+    # Imagen dinámica del plano (mesas reservadas con X roja)
+    "Pillow>=10.0",
+
     # Logs
     "structlog>=24.4",
     "python-dotenv>=1.0",

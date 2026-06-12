@@ -213,20 +213,28 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "name": "enviar_plano_espacio",
         "description": (
-            "Envía al cliente la FOTO del plano/distribución del salón de La "
-            "Cantina (las mesas y las 3 zonas). Úsalo cuando pregunte por el "
-            "espacio, cómo es el lugar/salón, dónde está una mesa, dónde queda "
-            "su mesa, la ubicación de las mesas, el mapa/plano o la distribución. "
+            "Envía al cliente el plano del salón de La Cantina con las mesas ya "
+            "reservadas marcadas en rojo para la fecha indicada. Úsalo cuando "
+            "pregunte por el espacio, cómo es el lugar/salón, dónde está una mesa, "
+            "la ubicación de las mesas, el mapa/plano o la distribución. "
             "(OJO: NO es lo mismo que 'cómo llegar'/dirección → para eso usa "
             "`enviar_como_llegar`.) JUNTO con la foto, en tu texto describe "
-            "brevemente cada zona usando la info del venue: *Cantina* (mesas "
-            "1–16, zona general), *VIP* (mesas 17–25, con mesas grandes de 8p) y "
-            "*Rumbero* (mesas 26–42, zona general), y menciona barra, tarima y "
-            "baños. Cierra invitando al cliente a escoger una mesa o zona para "
-            "reservar. Llámalo una sola vez por conversación salvo que lo "
-            "vuelva a pedir."
+            "brevemente cada zona: *Cantina* (mesas 1–16, zona general), *VIP* "
+            "(mesas 17–25, mesas grandes de 8p) y *Rumbero* (mesas 26–42, zona "
+            "general), y menciona barra, tarima y baños. Cierra invitando al "
+            "cliente a escoger una mesa o zona para reservar. Llámalo una sola "
+            "vez por conversación salvo que lo vuelva a pedir."
         ),
-        "input_schema": {"type": "object", "properties": {}},
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD de la noche a consultar. "
+                                   "Si no se mencionó fecha, usa hoy.",
+                },
+            },
+        },
     },
     {
         "name": "enviar_estado_actual",
@@ -490,14 +498,18 @@ async def handler_enviar_carta(args: dict, ctx: dict) -> dict:
 
 
 async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
-    """Marca que hay que enviar la foto del plano/distribución del salón (tras el texto)."""
+    """Marca que hay que enviar el plano del salón con mesas reservadas (tras el texto)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    fecha = args.get("fecha") or datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
     ctx["enviar_plano_espacio"] = True
-    log.info("tools.enviar_plano_espacio", cliente=ctx.get("cliente_numero"))
+    ctx["plano_fecha"] = fecha
+    log.info("tools.enviar_plano_espacio", cliente=ctx.get("cliente_numero"), fecha=fecha)
     return {
         "ok": True,
-        "nota": "La foto del plano del salón se enviará junto con tu respuesta. "
-                "En tu texto describe brevemente cada zona (Cantina, VIP, Rumbero) "
-                "e invita al cliente a escoger una mesa o zona.",
+        "fecha": fecha,
+        "nota": "El plano del salón (con mesas reservadas marcadas en rojo) se enviará "
+                "junto con tu respuesta. Describe cada zona e invita a escoger mesa.",
     }
 
 
