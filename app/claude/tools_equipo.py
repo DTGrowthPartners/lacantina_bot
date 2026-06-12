@@ -51,15 +51,21 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
     {
         "name": "enviar_plano_espacio",
         "description": (
-            "Envía la FOTO del plano/distribución del salón a ESTE chat (grupo o "
-            "personal). Úsalo cuando pregunten por la distribución, cómo están las "
-            "mesas, el mapa/plano del salón o pidan 'una foto de cómo están "
-            "distribuidas las mesas'. SÍ existe la foto guardada en el servidor — "
-            "NUNCA digas que no la tienes ni que la herramienta no está disponible. "
-            "Acompáñala con una breve descripción de las 3 zonas (Cantina, VIP, "
-            "Rumbero)."
+            "Envía el plano del salón con las mesas ya reservadas marcadas en rojo "
+            "para la fecha indicada. Úsalo cuando pregunten por la distribución, "
+            "cómo están las mesas, el mapa/plano o la disponibilidad visual. "
+            "SÍ existe la foto — NUNCA digas que no la tienes. "
+            "Acompáñala con una breve descripción de las 3 zonas (Cantina, VIP, Rumbero)."
         ),
-        "input_schema": {"type": "object", "properties": {}},
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD de la noche a mostrar. Si no se mencionó, usa hoy.",
+                },
+            },
+        },
     },
     {
         "name": "consultar_reservas_del_dia",
@@ -553,8 +559,7 @@ async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
 
 
 async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
-    """Manda la foto del plano del salón al chat actual (grupo o personal)."""
-    # Dedup intra-turno: una sola foto por mensaje (evita reenvíos en el tool-loop).
+    """Manda el plano del salón con mesas reservadas marcadas en rojo."""
     if ctx.get("_plano_enviado"):
         return {"ok": True, "nota": "El plano ya se envió en este turno. NO lo mandes otra vez."}
     destino = ctx.get("destino_envio")
@@ -563,22 +568,44 @@ async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
     if not _PLANO.exists():
         log.warning("tools_equipo.enviar_plano.no_existe", path=str(_PLANO))
         return {"ok": False, "error": "no encuentro la foto del plano en el servidor"}
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     from app.whapi.client import enviar_imagen_bytes
+    from app.integrations import cantina_api
+    from app.utils.plano import generar_plano_con_reservas
+
+    fecha = args.get("fecha") or datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
+
+    # Obtener mesas ocupadas para la fecha
+    mesas_reservadas: list[int] = []
     try:
-        await enviar_imagen_bytes(
-            destino, _PLANO.read_bytes(), mime="image/png",
-            filename="plano-espacio.png",
-            caption="🗺️ Distribución del salón — La Cantina Plus",
-        )
+        disp = await cantina_api.disponibilidad(fecha)
+        ocupadas = (disp.get("ocupacion") or {}).get("ocupadas") or []
+        mesas_reservadas = [int(m) for m in ocupadas if str(m).isdigit()]
+    except Exception as e:
+        log.warning("tools_equipo.enviar_plano.disponibilidad_fail", error=str(e))
+
+    png_bytes = generar_plano_con_reservas(mesas_reservadas)
+    if png_bytes is None:
+        png_bytes = _PLANO.read_bytes()
+
+    try:
+        cap = f"🗺️ Plano del salón — {fecha} (🔴 = ya reservada)"
+        await enviar_imagen_bytes(destino, png_bytes, mime="image/png",
+                                  filename="plano-espacio.png", caption=cap)
     except Exception as e:
         log.warning("tools_equipo.enviar_plano.fail", destino=destino, error=str(e))
         return {"ok": False, "error": f"no se pudo enviar la foto: {str(e)[:160]}"}
+
     ctx["_plano_enviado"] = True
-    log.info("tools_equipo.enviar_plano_espacio", destino=destino)
+    log.info("tools_equipo.enviar_plano_espacio", destino=destino, fecha=fecha,
+             reservadas=len(mesas_reservadas))
     return {
         "ok": True,
-        "nota": "Foto del plano enviada a este chat. En tu texto describe brevemente "
-                "las 3 zonas (Cantina/derecha, VIP/medio, Rumbero/izquierda).",
+        "fecha": fecha,
+        "mesas_marcadas": len(mesas_reservadas),
+        "nota": "Plano enviado con mesas reservadas en rojo. Describe las 3 zonas brevemente.",
     }
 
 
