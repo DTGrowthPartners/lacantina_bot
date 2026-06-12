@@ -42,7 +42,6 @@ from app.utils.humanizer import (
 )
 from app.whapi.client import (
     auth_headers,
-    enviar_documento_bytes,
     enviar_imagen_bytes,
     enviar_paused,
     enviar_texto,
@@ -61,7 +60,7 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 
 
 _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
-_CARTA_PDF = Path(settings.data_dir) / "media" / "Menu_La_Cantina.pdf"
+_MENU_URL = "https://menu.pirpos.com/menu/5ff4ce6ffe4b9a75e193fcb9"
 _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _FLYERS_DIR = Path(settings.data_dir) / "media" / "flyers"
 
@@ -87,23 +86,17 @@ async def _enviar_flyer_evento(session: AsyncSession, cliente_id: int, cliente_n
         log.warning("flow.flyer_evento.fail", error=str(e))
 
 
-async def _enviar_carta_pdf(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
-    """Envía la carta/menú en PDF al cliente (tras el texto)."""
-    if not _CARTA_PDF.exists():
-        log.warning("flow.carta_pdf.no_existe", path=str(_CARTA_PDF))
-        return
+async def _enviar_link_menu(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
+    """Envía el link del menú digital al cliente (tras el texto)."""
     try:
-        await enviar_documento_bytes(
-            cliente_numero, _CARTA_PDF.read_bytes(), mime="application/pdf",
-            filename="Menu_La_Cantina.pdf", caption="🍾 Nuestra carta 🎶",
-        )
+        await enviar_texto(cliente_numero, _MENU_URL)
         await guardar_conversacion(
-            session, cliente_id=cliente_id, direccion="outbound", tipo="pdf",
-            contenido="[carta: Menu_La_Cantina.pdf]", metadata={"media": "carta_pdf"},
+            session, cliente_id=cliente_id, direccion="outbound", tipo="texto",
+            contenido=_MENU_URL, metadata={"media": "menu_link"},
         )
-        log.info("flow.carta_pdf.enviado", cliente=cliente_numero)
+        log.info("flow.menu_link.enviado", cliente=cliente_numero)
     except Exception as e:
-        log.warning("flow.carta_pdf.fail", error=str(e))
+        log.warning("flow.menu_link.fail", error=str(e))
 
 
 async def _enviar_plano_espacio(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
@@ -375,7 +368,7 @@ async def procesar_mensaje_inbound(
     if ctx.get("enviar_video_como_llegar"):
         await _enviar_video_como_llegar(session, cliente_id, cliente_numero)
     if ctx.get("enviar_carta_pdf"):
-        await _enviar_carta_pdf(session, cliente_id, cliente_numero)
+        await _enviar_link_menu(session, cliente_id, cliente_numero)
     if ctx.get("enviar_plano_espacio"):
         await _enviar_plano_espacio(session, cliente_id, cliente_numero)
     if ctx.get("enviar_estado_actual"):

@@ -202,10 +202,11 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "name": "enviar_carta",
         "description": (
-            "Envía al cliente la CARTA/MENÚ en PDF. Úsalo cuando pregunte por "
-            "bebidas, tragos, licores, comida, la carta o el menú. Acompáñalo con "
-            "un mensaje breve (puedes mencionar 1-2 opciones del menú o invitar a "
-            "verla). Llámalo una sola vez por conversación salvo que lo vuelva a pedir."
+            "Envía al cliente el LINK del menú digital (siempre actualizado). "
+            "Úsalo cuando pregunte por bebidas, tragos, licores, comida, la carta "
+            "o el menú. Acompáñalo con un mensaje breve (puedes mencionar 1-2 "
+            "opciones o invitar a verlo). Llámalo una sola vez por conversación "
+            "salvo que lo vuelva a pedir."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
