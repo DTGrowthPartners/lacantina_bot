@@ -312,6 +312,16 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
         },
     },
     {
+        "name": "enviar_estado_actual",
+        "description": (
+            "Envía al chat la IMAGEN o VIDEO del estado/promo vigente de La Cantina "
+            "(lo último que el equipo publicó). Úsalo cuando alguien pida 'el estado', "
+            "'la promo', 'la foto que subieron', 'el flyer', etc. "
+            "Si no hay estado vigente, la tool te avisa y lo dices con amabilidad."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "reenviar_comprobante_cliente",
         "description": (
             "Reenvía a ESTE chat (el grupo del equipo) la última IMAGEN que envió "
@@ -513,6 +523,16 @@ async def handler_publicar_estado(args: dict, ctx: dict) -> dict:
                                 "bot puede reenviárselo a los clientes que pregunten por la promo/estado."}
 
 
+async def handler_enviar_estado_actual(args: dict, ctx: dict) -> dict:
+    """Marca que hay que enviar la imagen/video del estado vigente al chat del equipo."""
+    from app import promo_estado
+    if promo_estado.cargar_estado() is None:
+        return {"ok": False, "sin_estado": True,
+                "nota": "No hay un estado/promo vigente guardado. Avísale que por ahora no hay una promo publicada."}
+    ctx["enviar_estado_actual"] = True
+    return {"ok": True, "nota": "La imagen del estado/promo se enviará junto con tu respuesta."}
+
+
 async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
     """Recupera la última imagen que mandó un cliente (su comprobante) y la
     reenvía al chat actual (el grupo del equipo)."""
@@ -632,6 +652,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "avisar_cliente": handler_avisar_cliente,
     "reenviar_comprobante_cliente": handler_reenviar_comprobante_cliente,
     "publicar_estado": handler_publicar_estado,
+    "enviar_estado_actual": handler_enviar_estado_actual,
 }
 
 

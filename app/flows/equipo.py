@@ -30,7 +30,10 @@ from app.db.models import AlertaFabio, Cliente, Conversacion
 from app.db.repos import get_or_create_cliente, guardar_conversacion
 from app.equipo.directorio import Miembro
 from app.logging_setup import log
-from app.whapi.client import auth_headers, enviar_texto, set_token as set_whapi_token
+from app.whapi.client import (
+    auth_headers, enviar_texto, enviar_imagen_bytes, enviar_video_bytes,
+    set_token as set_whapi_token,
+)
 from app.whapi.parser import MensajeWhapi
 from app.identidades import Identidad, principal as _identidad_principal
 
@@ -422,6 +425,28 @@ async def procesar_mensaje_equipo(
                     await enviar_texto(destino_envio, texto_final)
                 except Exception as e:
                     log.error("flow_equipo.enviar_confirmacion_fail", error=str(e))
+                # Enviar estado/promo vigente si la tool lo marcó.
+                if ctx_tool.get("enviar_estado_actual"):
+                    try:
+                        from app import promo_estado
+                        estado = promo_estado.cargar_estado()
+                        if estado:
+                            path, caption = estado
+                            cap = caption or "📸 Estado/promo vigente de La Cantina Plus 🎶"
+                            if promo_estado.es_video(path):
+                                await enviar_video_bytes(
+                                    destino_envio, path.read_bytes(),
+                                    mime=promo_estado.mime_de(path),
+                                    filename=path.name, caption=cap,
+                                )
+                            else:
+                                await enviar_imagen_bytes(
+                                    destino_envio, path.read_bytes(),
+                                    mime=promo_estado.mime_de(path),
+                                    filename=path.name, caption=cap,
+                                )
+                    except Exception as e:
+                        log.warning("flow_equipo.enviar_estado_fail", error=str(e))
                 # Persistir outbound para que aparezca en /admin/chats
                 try:
                     await guardar_conversacion(
