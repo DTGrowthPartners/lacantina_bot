@@ -279,9 +279,10 @@ Responde SOLO con UNO de estos labels, sin explicación:
 - envia_comprobante_pago
 - modificar_reserva
 - cancelar_reserva
+- pide_estado          ← pide ver la promo, el estado, el flyer, la foto/video que subieron
 - queja
 - pide_humano
-- spam
+- spam                 ← SOLO publicidad externa, bots automáticos o texto completamente irrelevante sin relación con La Cantina
 - otro
 
 Mensaje a clasificar:

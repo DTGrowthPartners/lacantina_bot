@@ -289,6 +289,18 @@ async def procesar_mensaje_inbound(
         log.info("flow.spam_ignorado", cliente=cliente_numero)
         return []
 
+    if intent == "pide_estado":
+        from app import promo_estado as _pe
+        if _pe.cargar_estado() is not None:
+            await _enviar_estado_actual(session, cliente_id, cliente_numero)
+        else:
+            await enviar_texto(
+                cliente_numero,
+                "Por ahora no tenemos una promo activa publicada. "
+                "Cuando el equipo suba algo te lo hacemos saber. 🎶",
+            )
+        return []
+
     # 3. Imagen entrante → multimodal (comprobante de cover, captura, etc.)
     imagen_b64: str | None = None
     imagen_mime: str | None = None

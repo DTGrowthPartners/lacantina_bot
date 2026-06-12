@@ -24,6 +24,7 @@ INTENTS_VALIDOS = {
     "envia_comprobante_pago",
     "modificar_reserva",
     "cancelar_reserva",
+    "pide_estado",
     "queja",
     "pide_humano",
     "spam",
