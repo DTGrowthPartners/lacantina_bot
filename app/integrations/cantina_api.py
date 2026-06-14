@@ -93,9 +93,9 @@ async def disponibilidad(fecha: str, personas: int | None = None) -> dict[str, A
       - evento (None o {nombre, artista, tiene_cover, valor_cover, link_pago})
       - plano_url (foto del diagrama estático del salón)
       - ocupacion: {ocupadas:[...], libres:[...]}  ← mapa REAL sin filtrar
-      - mesas_disponibles: [...] + total_disponibles  ← FILTRADO por capacidad + VIP
+      - mesas_disponibles: [...] + total_disponibles  ← FILTRADO por capacidad máxima
       - requiere_combinar (bool) + combo_sugerido + combos
-      - nota_vip (str | None)  ← solo en día de evento si la VIP queda restringida
+      - nota_vip (str | None)  ← campo legacy; actualmente None
       - salas_privadas: {disponibles:[...], nota}
     """
     params: dict[str, Any] = {"fecha": fecha}

@@ -19,23 +19,23 @@ Preguntas que llegan TODOS los días al chat. Usa estas como referencia de
   mesa?"*
 
 ## ¿Cuántas personas caben por mesa?
-> *Las mesas son de 4 personas. Para grupos más grandes unimos mesas vecinas.
+> *Las mesas estándar son de máximo 6 personas y las mesas 17, 18, 24 y 25
+> admiten máximo 8. Para grupos más grandes unimos mesas vecinas.
 > Si son muchos también tenemos 2 salas privadas para hasta 10 personas
 > c/u con mínimo de consumo de $1.000.000.*
 
 ## ¿Tienen mesa para X personas el viernes?
 - Llama `consultar_disponibilidad(fecha, personas)`.
 - Si hay → ofrece UNA opción concreta (no listes 5 mesas). *"Sí, te puedo
-  guardar la mesa 12 — zona Cantina, perfecta para 4. ¿A nombre de quién?"*
-- Si requiere combinar → *"Para 7 personas te unimos las mesas 17 y 18.
+  guardar la mesa 12 — zona Cantina, perfecta para 6. ¿A nombre de quién?"*
+- Si requiere combinar → *"Para 9 personas te unimos las mesas 17 y 18.
   ¿Te sirve?"*
 - Si NO hay → *"Para esa noche ya está full por evento. ¿Quieres que mire
   otra fecha?"* o ofrecer sala privada.
 
 ## ¿La sala VIP es la misma que las salas privadas?
 > *No, son cosas distintas. La **zona VIP** son mesas (17–25) dentro del
-> salón principal — el día de evento las reservamos para grupos de más de
-> 6 personas. Las **salas privadas** (Sala VIP 1 y Sala VIP 2) son cuartos
+> salón principal. Las **salas privadas** (Sala VIP 1 y Sala VIP 2) son cuartos
 > aparte, para hasta 10 personas, con mínimo de consumo de $1.000.000.*
 
 ## ¿Cobran a la entrada o anticipado?

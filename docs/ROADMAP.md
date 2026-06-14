@@ -195,10 +195,10 @@ Antes de hacer go-live abrir el bot al público:
    ofrece mesa y crea reserva.
 2. **Cover anticipado**: en una fecha con evento, reservar → recibir link
    pago → mandar comprobante (foto) → confirmar que escala al grupo equipo.
-3. **Grupo grande**: pedir reserva para 8 → confirmar que ofrece `combo`
+3. **Grupo grande**: pedir reserva para 9 → confirmar que ofrece `combo`
    (unir mesas vecinas) o sala privada.
-4. **Día de evento + VIP con ≤6 personas**: confirmar que el bot NO ofrece
-   VIP, sino Cantina/Rumbero.
+4. **Capacidad máxima**: confirmar que una mesa estándar rechaza 7 personas
+   y que las mesas 17, 18, 24 y 25 aceptan hasta 8.
 5. **Staff escribiendo desde su número**: que NO le conteste como cliente.
 6. **Equipo en grupo**: mandar "¿cómo va el viernes?" en el grupo equipo →
    confirmar resumen.

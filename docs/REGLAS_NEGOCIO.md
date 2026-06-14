@@ -22,28 +22,23 @@ que es lo que ve Claude en el system prompt.
 
 ## Distribución del salón
 
-**Total: 42 mesas · 184 personas · 3 zonas**
+**Total: 42 mesas · 260 personas · 3 zonas**
 
 | Zona | Mesas | Capacidad | Notas |
 |------|-------|-----------|-------|
-| Cantina | 1–16 | 4p c/u (64p total) | Zona general |
-| VIP | 17–25 | 17, 18, 24, 25 = 8p; resto 4p | Restricción en día de evento (ver abajo) |
-| Rumbero | 26–42 | 4p c/u (68p total) | Zona general |
+| Cantina | 1–16 | 6p c/u (96p total) | Zona general |
+| VIP | 17–25 | 17, 18, 24, 25 = 8p; resto 6p (62p total) | Disponible con o sin evento |
+| Rumbero | 26–42 | 6p c/u (102p total) | Zona general |
 
-- Mesas estándar: **4 personas**.
+- Mesas estándar: **6 personas máximo**.
 - Mesas grandes (17, 18, 24, 25): **8 personas**.
-- Grupos +7: unión de mesas vecinas contiguas.
+- Grupos +9: unión de mesas vecinas contiguas.
 - Elementos fijos: ENTRADA, BARRA, TARIMA, BAÑOS.
 
-## Regla VIP (importante)
+## Zona VIP
 
-| Día | Regla |
-|-----|-------|
-| Sin evento | VIP libre para cualquiera, sin importar tamaño del grupo. |
-| Con evento | VIP **solo para grupos de más de 6 personas**. ≤6 → ofrecer otra zona. |
-
-**Forzado en el backend** (`vipReservada` en `cantina_api`). El bot NO valida —
-solo comunica si la API responde con `nota_vip`.
+La VIP está disponible para cualquier grupo con o sin evento. El backend
+únicamente exige respetar la capacidad máxima de las mesas seleccionadas.
 
 ## Salas privadas (distintas de la zona VIP)
 

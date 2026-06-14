@@ -219,9 +219,10 @@ TOOL_DEFINITIONS: list[dict] = [
             "la ubicación de las mesas, el mapa/plano o la distribución. "
             "(OJO: NO es lo mismo que 'cómo llegar'/dirección → para eso usa "
             "`enviar_como_llegar`.) JUNTO con la foto, en tu texto describe "
-            "brevemente cada zona: *Cantina* (mesas 1–16, zona general), *VIP* "
-            "(mesas 17–25, mesas grandes de 8p) y *Rumbero* (mesas 26–42, zona "
-            "general), y menciona barra, tarima y baños. Cierra invitando al "
+            "brevemente cada zona: *Cantina* (mesas 1–16, máximo 6p), *VIP* "
+            "(mesas 17–25; 17, 18, 24 y 25 máximo 8p, las demás 6p) y "
+            "*Rumbero* (mesas 26–42, máximo 6p), y menciona barra, tarima y "
+            "baños. Cierra invitando al "
             "cliente a escoger una mesa o zona para reservar. Llámalo una sola "
             "vez por conversación salvo que lo vuelva a pedir."
         ),

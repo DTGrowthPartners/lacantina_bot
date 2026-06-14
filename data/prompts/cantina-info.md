@@ -40,19 +40,20 @@ https://instagram.com/lacantinaplusctg"*
 
 ## Distribución del salón
 
-**42 mesas · 184 personas · 3 zonas**
+**42 mesas · 260 personas · 3 zonas**
 
 | Zona | Apodo (pasillo) | Mesas | Capacidad | Notas |
 |------|-----------------|-------|-----------|-------|
-| **Cantina** | **derecha** | 1–16 | 4 personas c/u (64p) | Zona general |
-| **VIP** | **medio** | 17–25 | 17, 18, 24, 25 = 6p; resto 4p | En día de evento, solo grupos de más de 6 |
-| **Rumbero** | **izquierda** | 26–42 | 4 personas c/u (68p) | Zona general |
+| **Cantina** | **derecha** | 1–16 | 6 personas c/u (96p) | Zona general |
+| **VIP** | **medio** | 17–25 | 17, 18, 24, 25 = 8p; resto 6p (62p) | Disponible en días normales y de evento |
+| **Rumbero** | **izquierda** | 26–42 | 6 personas c/u (102p) | Zona general |
 
-- Mesas estándar: **4 personas**. Mesas grandes (17, 18, 24, 25): **8 personas**.
+- La capacidad es un **máximo estricto**. Mesas estándar: **6 personas**.
+  Mesas grandes (17, 18, 24, 25): **8 personas**.
 - **Apodos de los pasillos:** VIP = **el del medio**, Cantina = **el de la
   derecha**, Rumbero = **el de la izquierda**. Si el cliente dice "el pasillo del
   medio" entiende que es la VIP, "el de la derecha" la Cantina, etc.
-- Grupos grandes (+7): se **unen varias mesas** a nombre de una sola persona.
+- Grupos grandes (+9): se **unen varias mesas** a nombre de una sola persona.
   - Lo normal es unir **mesas vecinas contiguas** (`combo_sugerido`).
   - **Reservas masivas (grupos muy grandes, ej. 30 personas):** se pueden unir
     **muchas mesas aunque NO sean contiguas** — incluso **todo un pasillo
@@ -64,13 +65,10 @@ https://instagram.com/lacantinaplusctg"*
   `enviar_plano_espacio`** para mandarla (además del texto). NUNCA digas que no
   tienes la foto.
 
-## Regla VIP (importante)
+## Zona VIP
 
-- **Día normal (sin evento):** la VIP (17–25) está libre para cualquiera, sin
-  importar el tamaño del grupo.
-- **Día de evento:** la VIP queda **exclusiva para grupos de más de 6**.
-  Con 6 o menos → ofrece otra zona (Cantina/Rumbero).
-- Forzado por el backend (`vipReservada`). El bot solo lo comunica.
+- La VIP (17–25) está disponible para cualquier grupo tanto en días normales
+  como en días de evento, siempre respetando la capacidad máxima de cada mesa.
 
 ## Salas privadas (distintas de la zona VIP)
 
@@ -109,8 +107,8 @@ contiguas**. Incluso se puede reservar **un pasillo entero**.
   teléfono** (ej. cuando solo dan el nombre).
 - Si hay **evento con cover**, el cover es **por persona** sobre el total del
   grupo (igual que cualquier reserva).
-- En **día de evento**, la VIP/del medio sigue siendo solo para grupos de **más
-  de 6** — una reserva masiva de 30 obviamente cumple, así que puede tomar la VIP.
+- La VIP/del medio está disponible con o sin evento, respetando la capacidad
+  máxima total de las mesas seleccionadas.
 - Si en el pasillo que pide hay **alguna mesa ya ocupada**, avísale al cliente:
   o elige otro pasillo, o se le reservan solo las mesas libres de ese pasillo.
 

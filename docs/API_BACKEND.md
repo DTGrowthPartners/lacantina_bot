@@ -48,9 +48,9 @@ Devuelve TODO el contexto del día:
 | `evento` (or `null`) | `{nombre, artista, tiene_cover, valor_cover, link_pago}`. |
 | `plano_url` | Foto del plano. |
 | `ocupacion.ocupadas[]` / `libres[]` | Mapa real **sin filtrar**. |
-| `mesas_disponibles[]` + `total_disponibles` | **Filtrado** por capacidad + reglas VIP. **Úsalo después de tener el # personas.** |
+| `mesas_disponibles[]` + `total_disponibles` | **Filtrado** por capacidad máxima. **Úsalo después de tener el # personas.** |
 | `requiere_combinar` (bool) + `combo_sugerido` + `combos[]` | Si no cabe en una sola mesa. |
-| `nota_vip` | En día de evento si la VIP queda restringida (>6 personas). `null` si no aplica. |
+| `nota_vip` | Campo legacy; actualmente siempre es `null`. |
 | `salas_privadas.disponibles[]` | Salas libres ese día. |
 
 **Auxiliar de combos:** `GET /api/combos?fecha&personas` → `{sugerido, combos}`.
@@ -151,7 +151,8 @@ El bot NO necesita validar estas — el backend devuelve `400`/`409` con
 mensaje claro:
 
 - Capacidad máxima por mesa.
-- En día de evento, VIP (17–25) solo para grupos >6.
+- Mesas estándar: máximo 6 personas; mesas 17, 18, 24 y 25: máximo 8.
+- Reservas combinadas: `num_personas` no puede superar la capacidad total.
 - Salas privadas: mínimo $1.000.000 (gastable), sin cover, máx 10p.
 - Cover por persona = `valor_cover × num_personas` (automático).
 - Índice único: una mesa no puede tener dos reservas la misma fecha.
@@ -163,7 +164,7 @@ mensaje claro:
 | API key faltante/incorrecta | 401 | `{"ok": false, "error": "API key inválida o ausente."}` |
 | Fecha inválida | 400 | `{"ok": false, "error": "fecha inválida"}` |
 | Mesa ya reservada esa fecha | 409 | `{"ok": false, "error": "mesa ocupada"}` |
-| VIP con ≤6 en día de evento | 400 | `{"ok": false, "error": "VIP solo para grupos >6 en día de evento"}` |
+| Personas por encima de la capacidad | 400 | Error con la capacidad máxima y sugerencia de combinar mesas |
 | Sala con personas >10 | 400 | error claro |
 
 ## Cómo se usa desde el bot
