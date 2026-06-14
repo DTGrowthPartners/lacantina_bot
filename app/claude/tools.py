@@ -177,15 +177,16 @@ TOOL_DEFINITIONS: list[dict] = [
         "name": "registrar_comprobante_cover",
         "description": (
             "Cuando el cliente envía comprobante de pago del cover, marca la reserva "
-            "como 'anticipado' (pendiente verificación humana) y escala al equipo."
+            "como 'anticipado' (pendiente verificación humana) y escala al equipo. "
+            "La imagen actual se toma automáticamente del contexto; NO inventes ni "
+            "pidas una URL."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "reserva_id": {"type": "integer"},
-                "comprobante_url": {"type": "string"},
             },
-            "required": ["reserva_id", "comprobante_url"],
+            "required": ["reserva_id"],
         },
     },
     {
@@ -457,9 +458,12 @@ async def handler_consultar_reserva_cliente(args: dict, ctx: dict) -> dict:
 
 async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
     reserva_id = args.get("reserva_id")
-    url = args.get("comprobante_url")
+    url = args.get("comprobante_url") or ctx.get("incoming_media_url")
     if not (reserva_id and url):
-        return {"ok": False, "error": "reserva_id y comprobante_url son requeridos"}
+        return {
+            "ok": False,
+            "error": "reserva_id y una imagen de comprobante son requeridos",
+        }
     # Verificar que la reserva sea del cliente antes de tocarla.
     det = await cantina_api.detalle_reserva(reserva_id)
     if isinstance(det, dict) and det.get("ok", True):
@@ -475,11 +479,32 @@ async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
     })
     outbox = ctx.get("outbox")
     if isinstance(outbox, list):
-        outbox.append({
-            "tipo": "comprobante_cover",
-            "mensaje": f"💸 Comprobante de cover — reserva #{reserva_id}\nVerificar: {url}",
-            "media_url": url,
-        })
+        item = next(
+            (x for x in outbox if x.get("tipo") == "comprobante_cover"),
+            None,
+        )
+        mensaje = (
+            f"💸 *Comprobante de cover recibido*\n"
+            f"Reserva: #{reserva_id}\n"
+            f"Cliente: {ctx.get('cliente_numero') or '?'}\n\n"
+            "Para aprobarlo, menciona a Nicky y dile: "
+            f"“confirma el pago de la reserva #{reserva_id} y avísale al cliente”."
+        )
+        if item is None:
+            outbox.append({
+                "tipo": "comprobante_cover",
+                "mensaje": mensaje,
+                "media_url": url,
+                "media_bytes": ctx.get("incoming_media_bytes"),
+                "media_mime": ctx.get("incoming_media_mime"),
+                "cliente_numero": ctx.get("cliente_numero"),
+            })
+        else:
+            item.update({
+                "mensaje": mensaje,
+                "media_url": url,
+                "reserva_id": reserva_id,
+            })
     return res
 
 
@@ -542,6 +567,22 @@ async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
     ctx["_ya_escalo"] = True
     outbox = ctx.get("outbox")
     if isinstance(outbox, list):
+        if ctx.get("intent") == "envia_comprobante_pago":
+            comprobante = next(
+                (x for x in outbox if x.get("tipo") == "comprobante_cover"),
+                None,
+            )
+            if comprobante is not None:
+                detalle = (args.get("mensaje") or "").strip()
+                if detalle:
+                    comprobante["mensaje"] = (
+                        f"{comprobante['mensaje']}\n\nDetalle detectado:\n{detalle}"
+                    )
+                log.info(
+                    "tools.escalar_a_equipo.comprobante_enriquecido",
+                    cliente_id=ctx.get("cliente_id"),
+                )
+                return {"ok": True, "escalado": True, "comprobante_adjuntado": True}
         outbox.append({
             "clase": "escalacion",
             "tipo": args.get("tipo", "otro"),

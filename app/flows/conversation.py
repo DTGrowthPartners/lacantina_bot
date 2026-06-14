@@ -304,23 +304,50 @@ async def procesar_mensaje_inbound(
     # 3. Imagen entrante → multimodal (comprobante de cover, captura, etc.)
     imagen_b64: str | None = None
     imagen_mime: str | None = None
+    imagen_bytes: bytes | None = None
     if msg.tipo == "imagen" and msg.media_url:
         try:
             async with httpx.AsyncClient(timeout=30) as c:
                 r = await c.get(msg.media_url, headers=auth_headers())
                 if r.status_code < 400 and len(r.content) <= 5 * 1024 * 1024:
+                    imagen_bytes = r.content
                     imagen_b64 = base64.b64encode(r.content).decode("ascii")
                     imagen_mime = msg.media_mime or "image/jpeg"
         except Exception as e:
             log.warning("flow.imagen.fail_download", error=str(e))
 
     # 4. Contexto dinámico del cliente + tool use loop
+    outbox: list[dict] = []
+    if intent == "envia_comprobante_pago" and msg.tipo == "imagen" and msg.media_url:
+        outbox.append({
+            "tipo": "comprobante_cover",
+            "mensaje": (
+                "💸 *Comprobante de pago recibido*\n"
+                f"Cliente: {cliente_numero}\n\n"
+                "Verifica la imagen. Para aprobar el pago y avisarle al cliente, "
+                "menciona a Nicky e indica el cliente o la reserva."
+            ),
+            "media_url": msg.media_url,
+            "media_bytes": imagen_bytes,
+            "media_mime": imagen_mime or msg.media_mime or "image/jpeg",
+            "cliente_numero": cliente_numero,
+            "whapi_message_id": msg.id,
+        })
+        log.info(
+            "flow.comprobante_auto_encolado",
+            cliente=cliente_numero,
+            msg_id=msg.id,
+            bytes=len(imagen_bytes or b""),
+        )
     ctx = {
         "session": session,
         "cliente_id": cliente_id,
         "cliente_numero": cliente_numero,
         "intent": intent,
-        "outbox": [],
+        "outbox": outbox,
+        "incoming_media_url": msg.media_url,
+        "incoming_media_bytes": imagen_bytes,
+        "incoming_media_mime": imagen_mime or msg.media_mime,
     }
     extra_system = await _construir_contexto_cliente(session, cliente_id, cliente_numero)
 

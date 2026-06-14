@@ -29,7 +29,13 @@ settings = get_settings()
 _MAX_MEDIA_BYTES = 16 * 1024 * 1024
 
 
-async def notificar_equipo(texto: str, media_url: str | None = None) -> bool:
+async def notificar_equipo(
+    texto: str,
+    media_url: str | None = None,
+    *,
+    media_bytes: bytes | None = None,
+    media_mime: str | None = None,
+) -> bool:
     """Envía un mensaje al grupo del equipo de La Cantina.
 
     Si `media_url` viene dado (p. ej. el comprobante de pago que mandó un
@@ -48,6 +54,14 @@ async def notificar_equipo(texto: str, media_url: str | None = None) -> bool:
         return False
     grupo = settings.equipo_cantina_group_id
     try:
+        if media_bytes:
+            await enviar_imagen_bytes(
+                grupo,
+                media_bytes,
+                mime=media_mime or "image/jpeg",
+                caption=texto,
+            )
+            return True
         if media_url:
             imagen = await _descargar_media(media_url)
             if imagen is not None:

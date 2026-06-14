@@ -1426,7 +1426,12 @@ async def _drain_outbox(outbox: list[dict]) -> None:
             try:
                 # Si el item trae media (ej. comprobante de cover), notificar_equipo
                 # descarga la imagen y la reenvía al grupo con el texto como caption.
-                ok = await notificar_equipo(str(mensaje), media_url=item.get("media_url"))
+                ok = await notificar_equipo(
+                    str(mensaje),
+                    media_url=item.get("media_url"),
+                    media_bytes=item.get("media_bytes"),
+                    media_mime=item.get("media_mime"),
+                )
                 if not ok:
                     log.warning("flow.outbox.notif_no_enviado", tipo=item.get("tipo"))
             except Exception as e:
