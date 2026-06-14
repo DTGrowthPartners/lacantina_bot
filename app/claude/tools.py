@@ -41,6 +41,95 @@ def _extraer_reserva(res: dict) -> dict:
     return res
 
 
+def _normalizar_nombre(valor: str | None) -> str:
+    return re.sub(r"\s+", " ", (valor or "")).strip()
+
+
+def _validar_nombre_reserva(args: dict, ctx: dict) -> dict | None:
+    """Impide usar el pushname de WhatsApp o un nombre inferido por el modelo."""
+    confirmado = _normalizar_nombre(ctx.get("nombre_reserva_confirmado"))
+    if not confirmado:
+        return {
+            "ok": False,
+            "falta_nombre_confirmado": True,
+            "error": (
+                "Antes de reservar debes preguntarle al cliente exactamente "
+                "\"¿A nombre de quién hago la reserva?\" y esperar su respuesta. "
+                "No uses el nombre del perfil de WhatsApp."
+            ),
+        }
+    args["nombre_cliente"] = confirmado
+    return None
+
+
+def _formatear_cop(valor) -> str:
+    try:
+        return f"${int(float(valor)):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return str(valor or "No informado")
+
+
+def _formatear_alerta_reserva(tipo: str, args: dict, res: dict, telefono: str) -> str:
+    reserva = _extraer_reserva(res)
+    if isinstance(res.get("reservas"), list) and res["reservas"]:
+        primera = res["reservas"][0]
+        if isinstance(primera, dict):
+            reserva = primera
+
+    titulos = {
+        "simple": "🪑 *Nueva reserva de mesa*",
+        "grupo": "🪑 *Nueva reserva de grupo*",
+        "sala": "🥂 *Nueva reserva de sala privada*",
+    }
+    mesas = (
+        args.get("mesa_numeros")
+        or res.get("mesas")
+        or reserva.get("mesa_numero")
+        or args.get("mesa_id")
+    )
+    sala = reserva.get("sala_nombre") or args.get("sala_id")
+    identificador = (
+        res.get("grupo_id")
+        or reserva.get("grupo_id")
+        or reserva.get("id")
+        or res.get("id")
+    )
+    estado = reserva.get("estado") or res.get("estado") or "confirmada"
+    zona = reserva.get("mesa_zona") or reserva.get("zona") or res.get("zona")
+    cover_estado = reserva.get("cover_estado") or res.get("cover_estado")
+    monto_cover = reserva.get("monto_cover") or res.get("monto_cover")
+
+    lineas = [
+        titulos[tipo],
+        "",
+        f"👤 *A nombre de:* {args.get('nombre_cliente')}",
+        f"📱 *Teléfono:* {telefono}",
+        f"📅 *Fecha:* {args.get('fecha')}",
+        f"👥 *Personas:* {args.get('num_personas')}",
+    ]
+    if tipo == "sala":
+        lineas.append(f"🥂 *Sala:* {sala}")
+    else:
+        etiqueta = "Mesas" if isinstance(mesas, list) else "Mesa"
+        valor_mesas = ", ".join(str(m) for m in mesas) if isinstance(mesas, list) else mesas
+        lineas.append(f"🪑 *{etiqueta}:* {valor_mesas}")
+    if zona:
+        lineas.append(f"📍 *Zona:* {zona}")
+    if identificador is not None:
+        lineas.append(f"🔖 *ID:* {identificador}")
+    lineas.append(f"✅ *Estado:* {estado}")
+    if tipo == "sala" or not (cover_estado or monto_cover):
+        lineas.append("🎟️ *Cover:* No aplica")
+    else:
+        detalle_cover = str(cover_estado or "pendiente")
+        if monto_cover:
+            detalle_cover += f" · {_formatear_cop(monto_cover)}"
+        lineas.append(f"🎟️ *Cover:* {detalle_cover}")
+    if args.get("notas"):
+        lineas.append(f"📝 *Notas:* {args['notas']}")
+    return "\n".join(str(linea) for linea in lineas)
+
+
 async def _cliente_ya_reservo(fecha: str | None, telefono: str | None) -> list | None:
     """Mesas que el cliente (por teléfono) YA tiene reservadas esa fecha, o None.
 
@@ -106,6 +195,8 @@ TOOL_DEFINITIONS: list[dict] = [
         "name": "crear_reserva",
         "description": (
             "Reserva UNA mesa. Antes DEBES haber llamado consultar_disponibilidad. "
+            "Antes de usarla DEBES preguntar explícitamente a nombre de quién va la "
+            "reserva y esperar la respuesta. NUNCA uses el nombre del perfil de WhatsApp. "
             "Si hay evento con cover, el backend lo aplica automáticamente."
         ),
         "input_schema": {
@@ -126,7 +217,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "description": (
             "Reserva un GRUPO sobre varias mesas vecinas (cuando el grupo no cabe en "
             "una sola). Mesas deben ser contiguas — el backend valida. Las mesas se "
-            "toman de `consultar_disponibilidad → combo_sugerido`."
+            "toman de `consultar_disponibilidad → combo_sugerido`. Antes de usarla "
+            "DEBES preguntar a nombre de quién va la reserva y esperar la respuesta; "
+            "NUNCA uses el nombre del perfil de WhatsApp."
         ),
         "input_schema": {
             "type": "object",
@@ -149,7 +242,8 @@ TOOL_DEFINITIONS: list[dict] = [
         "description": (
             "Reserva una SALA PRIVADA (1 o 2). 10p c/u, mínimo de consumo $1.000.000 "
             "(gastable, no es cobro extra), SIN cover. Ofrécela para privacidad o "
-            "grupos exclusivos."
+            "grupos exclusivos. Antes de usarla DEBES preguntar a nombre de quién va "
+            "la reserva y esperar la respuesta; NUNCA uses el nombre del perfil de WhatsApp."
         ),
         "input_schema": {
             "type": "object",
@@ -349,6 +443,9 @@ async def handler_proximos_eventos(args: dict, ctx: dict) -> dict:
 
 
 async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
+    error_nombre = _validar_nombre_reserva(args, ctx)
+    if error_nombre:
+        return error_nombre
     tel = args.get("telefono") or ctx.get("cliente_numero")
     ya = await _cliente_ya_reservo(args.get("fecha"), tel)
     if ya:
@@ -370,15 +467,15 @@ async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
         if isinstance(outbox, list):
             outbox.append({
                 "tipo": "reserva_nueva",
-                "mensaje": (
-                    f"🪑 Reserva nueva: {args.get('nombre_cliente')} · "
-                    f"{args.get('num_personas')}p · {args.get('fecha')}"
-                ),
+                "mensaje": _formatear_alerta_reserva("simple", args, res, tel),
             })
     return res
 
 
 async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
+    error_nombre = _validar_nombre_reserva(args, ctx)
+    if error_nombre:
+        return error_nombre
     tel = args.get("telefono") or ctx.get("cliente_numero")
     ya = await _cliente_ya_reservo(args.get("fecha"), tel)
     if ya:
@@ -400,14 +497,15 @@ async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
         if isinstance(outbox, list):
             outbox.append({
                 "tipo": "reserva_nueva",
-                "mensaje": (f"🪑 Reserva (grupo) nueva: {args.get('nombre_cliente')} · "
-                            f"{args.get('num_personas')}p · mesas {args.get('mesa_numeros')} · "
-                            f"{args.get('fecha')}"),
+                "mensaje": _formatear_alerta_reserva("grupo", args, res, tel),
             })
     return res
 
 
 async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
+    error_nombre = _validar_nombre_reserva(args, ctx)
+    if error_nombre:
+        return error_nombre
     tel = args.get("telefono") or ctx.get("cliente_numero")
     ya = await _cliente_ya_reservo(args.get("fecha"), tel)
     if ya:
@@ -429,9 +527,7 @@ async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
         if isinstance(outbox, list):
             outbox.append({
                 "tipo": "reserva_nueva",
-                "mensaje": (f"🥂 Reserva de SALA privada: {args.get('nombre_cliente')} · "
-                            f"{args.get('num_personas')}p · sala {args.get('sala_id')} · "
-                            f"{args.get('fecha')}"),
+                "mensaje": _formatear_alerta_reserva("sala", args, res, tel),
             })
     return res
 

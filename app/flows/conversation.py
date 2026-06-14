@@ -20,6 +20,7 @@ escalación) para drenar DESPUÉS del commit (lo hace _procesar_async en main.py
 from __future__ import annotations
 
 import base64
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -63,6 +64,56 @@ _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
 _MENU_URL = "https://menu.pirpos.com/menu/5ff4ce6ffe4b9a75e193fcb9"
 _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _FLYERS_DIR = Path(settings.data_dir) / "media" / "flyers"
+
+
+def _limpiar_nombre_reserva(valor: str | None) -> str | None:
+    """Normaliza un nombre que el cliente dio expresamente para la reserva."""
+    nombre = re.sub(r"\s+", " ", (valor or "")).strip(" \t\r\n.,;:!?\"'")
+    nombre = re.sub(
+        r"\s+(?:por favor|gracias|porfa|por favor gracias)$",
+        "",
+        nombre,
+        flags=re.IGNORECASE,
+    ).strip()
+    if not (2 <= len(nombre) <= 80):
+        return None
+    if len(nombre.split()) > 8 or not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", nombre):
+        return None
+    if nombre.casefold() in {"si", "sí", "no", "ok", "dale", "listo", "gracias"}:
+        return None
+    return nombre
+
+
+def _nombre_reserva_explicito(mensaje_actual: str, historial_db: list) -> str | None:
+    """Obtiene el nombre solo si el cliente lo escribió como nombre de reserva."""
+    texto = (mensaje_actual or "").strip()
+    patrones = (
+        r"(?:^|\b)a nombre de\s+(.+)$",
+        r"(?:^|\b)mi nombre es\s+(.+)$",
+        r"(?:^|\b)la reserva (?:es|va|ser[ií]a|quedar[ií]a) (?:a nombre de|para)\s+(.+)$",
+    )
+    for patron in patrones:
+        coincidencia = re.search(patron, texto, flags=re.IGNORECASE)
+        if coincidencia:
+            return _limpiar_nombre_reserva(coincidencia.group(1))
+
+    anterior = next(
+        (
+            h for h in reversed(historial_db[:-1])
+            if getattr(h, "direccion", None) in ("outbound", "humano")
+            and getattr(h, "contenido", None)
+        ),
+        None,
+    )
+    pregunta = getattr(anterior, "contenido", "") if anterior else ""
+    pregunto_nombre = re.search(
+        r"a nombre de qui[eé]n|qu[eé] nombre (?:pongo|coloco)|nombre para la reserva",
+        pregunta,
+        flags=re.IGNORECASE,
+    )
+    if pregunto_nombre and "\n" not in texto and len(texto.split()) <= 8:
+        return _limpiar_nombre_reserva(texto)
+    return None
 
 
 async def _enviar_flyer_evento(session: AsyncSession, cliente_id: int, cliente_numero: str, fecha: str) -> None:
@@ -262,6 +313,7 @@ async def procesar_mensaje_inbound(
 
     # 1. Historial (hasta 30 msgs / 48h)
     historial_db = await ultimos_mensajes(session, cliente_id, n=30, horas_max=48)
+    nombre_reserva_confirmado = _nombre_reserva_explicito(contenido_usuario, historial_db)
     ahora_utc = datetime.now(timezone.utc)
     umbral_gap = ahora_utc - timedelta(hours=12)
     historial_claude: list[dict] = []
@@ -348,6 +400,7 @@ async def procesar_mensaje_inbound(
         "incoming_media_url": msg.media_url,
         "incoming_media_bytes": imagen_bytes,
         "incoming_media_mime": imagen_mime or msg.media_mime,
+        "nombre_reserva_confirmado": nombre_reserva_confirmado,
     }
     extra_system = await _construir_contexto_cliente(session, cliente_id, cliente_numero)
 
@@ -481,7 +534,10 @@ async def _construir_contexto_cliente(
         select(Cliente).where(Cliente.id == cliente_id)
     )).scalar_one_or_none()
     if cliente and cliente.nombre:
-        lineas.append(f"- Nombre: {cliente.nombre}")
+        lineas.append(
+            f"- Nombre visible del perfil de WhatsApp: {cliente.nombre} "
+            "(solo referencia; NUNCA lo uses como nombre de una reserva)"
+        )
 
     # Tags actuales aplicados al cliente + lista de tags disponibles para
     # aplicar_tag_seguimiento (si la tool existe en el flujo equipo).
@@ -508,6 +564,11 @@ async def _construir_contexto_cliente(
         return ""  # casi sin datos útiles
     lineas.append("")
     lineas.append("Si el cliente ya dio un dato arriba o en el historial, NO se lo vuelvas a preguntar.")
+    lineas.append(
+        "EXCEPCION OBLIGATORIA: antes de crear cualquier reserva pregunta "
+        "\"¿A nombre de quién hago la reserva?\". El nombre del perfil de WhatsApp "
+        "NO cuenta como respuesta."
+    )
     texto = "\n".join(lineas)
     if bloque_mem:
         texto += "\n\n" + bloque_mem

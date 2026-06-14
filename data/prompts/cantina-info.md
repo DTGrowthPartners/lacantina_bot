@@ -139,7 +139,9 @@ contiguas**. Incluso se puede reservar **un pasillo entero**.
 
 ## Cómo se sirve el cliente (flujo recomendado)
 
-1. Pide reservar → preguntar **fecha** y **cuántas personas**.
+1. Pide reservar → preguntar **fecha**, **cuántas personas** y **a nombre de
+   quién va la reserva**. Este nombre debe darlo expresamente el cliente; nunca
+   se toma del perfil de WhatsApp.
 2. Llamar `consultar_disponibilidad(fecha, personas)`:
    - Si hay `evento` → avisar del **cover por persona** y, si es VIP, la `nota_vip`.
    - Si `requiere_combinar` → ofrecer **unir mesas** (`combo_sugerido`).
