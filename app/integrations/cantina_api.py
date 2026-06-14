@@ -141,6 +141,15 @@ async def detalle_reserva(reserva_id: int | str) -> dict[str, Any]:
     return await _request("GET", f"/api/reservas/{reserva_id}")
 
 
+async def reservas_cliente(telefono: str) -> dict[str, Any]:
+    """Busca reservas activas de mesas, grupos y salas por teléfono."""
+    return await _request(
+        "GET",
+        "/api/reservas/cliente",
+        params={"telefono": telefono},
+    )
+
+
 async def actualizar_reserva(reserva_id: int | str, cambios: dict) -> dict[str, Any]:
     """PATCH /api/reservas/:id
 

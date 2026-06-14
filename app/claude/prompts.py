@@ -277,6 +277,7 @@ Responde SOLO con UNO de estos labels, sin explicación:
 - pregunta_ubicacion
 - pregunta_evento_cover
 - consulta_disponibilidad
+- consultar_reserva     ← pregunta por una reserva que ya hizo: confirmarla, saber si sigue activa o recordar sus datos
 - pide_reservar
 - envia_comprobante_pago
 - modificar_reserva

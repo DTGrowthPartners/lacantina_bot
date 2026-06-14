@@ -60,7 +60,8 @@ Preguntas que llegan TODOS los días al chat. Usa estas como referencia de
 > te confirmen.* → escalar con `escalar_a_equipo(tipo="evento_privado", ...)`.
 
 ## "Quiero cancelar mi reserva"
-- Pedir el ID o fecha + nombre.
+- Primero usa `consultar_reserva_cliente` para buscarla por el teléfono del
+  chat. No pidas ID. Si aparecen varias, pregunta solo por la fecha.
 - Llamar `cancelar_reserva` (cliente solo puede cancelar la suya — el flow
   debe validar que el `cliente_id` coincide).
 - *"Listo, queda cancelada. Si quieres reagendar dime para qué fecha."*

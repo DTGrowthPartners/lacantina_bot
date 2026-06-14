@@ -260,11 +260,20 @@ TOOL_DEFINITIONS: list[dict] = [
     },
     {
         "name": "consultar_reserva_cliente",
-        "description": "Detalle de una reserva por id (cliente preguntando por la suya).",
+        "description": (
+            "Busca y confirma las reservas del propio cliente usando automáticamente "
+            "el teléfono del chat. Úsala cuando pregunte si su reserva sigue activa, "
+            "quiera confirmarla o pida sus datos, aunque hayan pasado días. NO le pidas "
+            "el ID: reserva_id es opcional y solo se usa si el cliente ya lo dio."
+        ),
         "input_schema": {
             "type": "object",
-            "properties": {"reserva_id": {"type": "integer"}},
-            "required": ["reserva_id"],
+            "properties": {
+                "reserva_id": {
+                    "type": "integer",
+                    "description": "Opcional; no se lo pidas al cliente.",
+                },
+            },
         },
     },
     {
@@ -533,12 +542,31 @@ async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
 
 
 async def handler_consultar_reserva_cliente(args: dict, ctx: dict) -> dict:
-    """Detalle de una reserva — SOLO si es del propio número del cliente.
+    """Busca por teléfono o consulta por ID, siempre limitada al propio cliente.
 
     PRIVACIDAD: sin esta verificación, un cliente podría pedir la reserva #N de
     otra persona y ver su nombre/teléfono. Si el teléfono de la reserva no
     coincide con el del chat, no devolvemos datos.
     """
+    if not args.get("reserva_id"):
+        precargadas = ctx.get("reservas_cliente_precargadas")
+        if precargadas is None:
+            res = await cantina_api.reservas_cliente(ctx.get("cliente_numero"))
+            if not (isinstance(res, dict) and res.get("ok", True)):
+                return res
+            reservas = res.get("reservas") or []
+        else:
+            reservas = precargadas
+        return {
+            "ok": True,
+            "reservas": reservas,
+            "total": len(reservas),
+            "instruccion": (
+                "Si hay una sola reserva, confírmala directamente con fecha, nombre, "
+                "personas y mesa(s) o sala. Si hay varias, pregunta únicamente por cuál "
+                "fecha consulta. Si no hay ninguna, indícalo con amabilidad. NUNCA pidas ID."
+            ),
+        }
     res = await cantina_api.detalle_reserva(args.get("reserva_id"))
     if not (isinstance(res, dict) and res.get("ok", True)):
         return res

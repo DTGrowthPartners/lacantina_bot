@@ -20,6 +20,7 @@ escalación) para drenar DESPUÉS del commit (lo hace _procesar_async en main.py
 from __future__ import annotations
 
 import base64
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -403,6 +404,20 @@ async def procesar_mensaje_inbound(
         "nombre_reserva_confirmado": nombre_reserva_confirmado,
     }
     extra_system = await _construir_contexto_cliente(session, cliente_id, cliente_numero)
+    if intent == "consultar_reserva":
+        from app.integrations import cantina_api
+
+        consulta = await cantina_api.reservas_cliente(cliente_numero)
+        reservas = consulta.get("reservas") if isinstance(consulta, dict) and consulta.get("ok") else None
+        ctx["reservas_cliente_precargadas"] = reservas
+        if reservas is not None:
+            extra_system += (
+                "\n\n## RESERVAS ACTIVAS DEL PROPIO CLIENTE\n"
+                + json.dumps(reservas, ensure_ascii=False, default=str)
+                + "\nResponde usando estos datos. Si hay una sola, confírmala directamente. "
+                "Si hay varias, pregunta solo por la fecha. Si no hay ninguna, indícalo. "
+                "NUNCA pidas ID, nombre ni teléfono."
+            )
 
     respuesta = await conversar(
         historial=historial_claude,

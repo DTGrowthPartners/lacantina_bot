@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from app.claude.anthropic_client import get_anthropic_client
 from app.claude.prompts import PROMPT_CLASIFICADOR_INTENT
 from app.config import get_settings
@@ -20,6 +22,7 @@ INTENTS_VALIDOS = {
     "pregunta_ubicacion",
     "pregunta_evento_cover",
     "consulta_disponibilidad",
+    "consultar_reserva",
     "pide_reservar",
     "envia_comprobante_pago",
     "modificar_reserva",
@@ -40,6 +43,15 @@ async def clasificar(mensaje: str, contexto_reciente: list[str] | None = None) -
     """
     if not mensaje.strip():
         return "otro"
+
+    if re.search(
+        r"\b(?:conf[ií]rmame|confirmar|consultar|ver|recordar)\b.{0,30}\bmi reserva\b"
+        r"|\bmi reserva\b.{0,30}\b(?:sigue|est[aá]|activa|confirmada|datos)\b"
+        r"|\btengo una reserva\b",
+        mensaje,
+        flags=re.IGNORECASE,
+    ):
+        return "consultar_reserva"
 
     ctx = ""
     if contexto_reciente:
