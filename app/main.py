@@ -1355,6 +1355,7 @@ async def _bot_bloqueado_para_whitelist() -> bool:
 # DeadlockDetectedError en Postgres + duplicados en escalar/pedido cuando
 # llegan varios webhooks casi simultáneos (cliente manda 2-3 fotos seguidas).
 _cliente_locks: dict[int, asyncio.Lock] = {}
+_equipo_locks: dict[str, asyncio.Lock] = {}
 
 
 def _lock_for_cliente(cliente_id: int) -> asyncio.Lock:
@@ -1362,6 +1363,19 @@ def _lock_for_cliente(cliente_id: int) -> asyncio.Lock:
     if lock is None:
         lock = asyncio.Lock()
         _cliente_locks[cliente_id] = lock
+    return lock
+
+
+def _equipo_chat_key(miembro, responder_a: str | None = None) -> str:
+    """Llave estable del chat operativo, compartida por todos sus mensajes."""
+    return responder_a or miembro.numero_whatsapp
+
+
+def _lock_for_equipo(chat_key: str) -> asyncio.Lock:
+    lock = _equipo_locks.get(chat_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _equipo_locks[chat_key] = lock
     return lock
 
 
@@ -1603,17 +1617,32 @@ async def _procesar_equipo_async(
 
     Si `responder_a` se pasa (ej: group_id@g.us), la respuesta va a ese chat
     en lugar del chat personal del miembro.
+
+    Los mensajes del mismo chat se serializan. Sin esto, una segunda orden
+    puede leer la primera como inbound pendiente antes de que exista su
+    confirmación outbound y volver a ejecutar ambas acciones.
     """
-    async with async_session_factory() as session:
-        try:
-            await procesar_mensaje_equipo(
-                session=session, miembro=miembro, msg=msg,
-                identidad=identidad, responder_a=responder_a,
-            )
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            log.exception("background.flow_equipo_fail", miembro=miembro.nombre)
+    from sqlalchemy import text as sa_text
+
+    chat_key = _equipo_chat_key(miembro, responder_a)
+    lock = _lock_for_equipo(chat_key)
+    async with lock:
+        async with async_session_factory() as session:
+            try:
+                # El asyncio.Lock cubre este proceso. El advisory lock cubre
+                # otros workers/instancias que compartan la misma base de datos.
+                await session.execute(
+                    sa_text("SELECT pg_advisory_xact_lock(hashtext(:chat_key))"),
+                    {"chat_key": f"cantina-equipo:{chat_key}"},
+                )
+                await procesar_mensaje_equipo(
+                    session=session, miembro=miembro, msg=msg,
+                    identidad=identidad, responder_a=responder_a,
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                log.exception("background.flow_equipo_fail", miembro=miembro.nombre)
 
 
 # ─── Entry point local (dev) ────────────────────────────────────────────────
