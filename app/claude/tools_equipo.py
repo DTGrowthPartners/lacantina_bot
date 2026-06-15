@@ -354,6 +354,16 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "borrar_ultimo_estado",
+        "description": (
+            "Borra el último estado real publicado por La Cantina en WhatsApp. "
+            "Úsalo cuando el equipo diga 'borra el último estado', 'elimina el "
+            "estado reciente', 'quita el estado que subiste' o similar. Ignora "
+            "registros vacíos, acciones de borrado pendientes y estados ya revocados."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "reenviar_comprobante_cliente",
         "description": (
             "Reenvía a ESTE chat (el grupo del equipo) la última IMAGEN que envió "
@@ -565,6 +575,56 @@ async def handler_enviar_estado_actual(args: dict, ctx: dict) -> dict:
     return {"ok": True, "nota": "La imagen del estado/promo se enviará junto con tu respuesta."}
 
 
+async def handler_borrar_ultimo_estado(args: dict, ctx: dict) -> dict:
+    """Borra el último estado propio con contenido real (imagen/video/texto)."""
+    from app.whapi.client import eliminar_mensaje, listar_stories
+
+    stories = await listar_stories(count=100)
+    items = stories.get("stories") or stories.get("messages") or stories.get("data") or []
+    candidatos: list[dict] = []
+
+    for story in items:
+        if not isinstance(story, dict) or not story.get("from_me"):
+            continue
+        if story.get("subtype") == "revoke" or story.get("action"):
+            continue
+        media_kind = next(
+            (kind for kind in ("image", "video", "audio", "text") if isinstance(story.get(kind), dict)),
+            None,
+        )
+        if not media_kind:
+            continue
+        candidatos.append(story)
+
+    if not candidatos:
+        return {
+            "ok": False,
+            "sin_estado": True,
+            "nota": "No encontré estados activos con imagen, video o texto para borrar.",
+        }
+
+    ultimo = max(candidatos, key=lambda s: int(s.get("timestamp") or 0))
+    message_id = ultimo.get("id")
+    if not message_id:
+        return {"ok": False, "error": "Encontré un estado, pero no trae id para borrarlo."}
+
+    await eliminar_mensaje(message_id)
+    log.info(
+        "tools_equipo.borrar_ultimo_estado",
+        por=ctx.get("miembro_nombre"),
+        message_id=message_id,
+        timestamp=ultimo.get("timestamp"),
+    )
+    return {
+        "ok": True,
+        "message_id": message_id,
+        "nota": (
+            "Último estado enviado a borrar. WhatsApp/Whapi puede tardar unos minutos "
+            "en reflejarlo; si aparece como pendiente, es sincronización del canal."
+        ),
+    }
+
+
 async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
     """Recupera la última imagen que mandó un cliente (su comprobante) y la
     reenvía al chat actual (el grupo del equipo)."""
@@ -711,6 +771,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "reenviar_comprobante_cliente": handler_reenviar_comprobante_cliente,
     "publicar_estado": handler_publicar_estado,
     "enviar_estado_actual": handler_enviar_estado_actual,
+    "borrar_ultimo_estado": handler_borrar_ultimo_estado,
 }
 
 
