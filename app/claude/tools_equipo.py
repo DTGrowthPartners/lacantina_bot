@@ -49,6 +49,38 @@ def _guardar_descripcion(fecha: str, texto: str | None) -> None:
 
 TOOL_DEFINITIONS_EQUIPO: list[dict] = [
     {
+        "name": "marcar_casa_llena",
+        "description": (
+            "Cierra nuevas reservas para una fecha. Úsala cuando el equipo diga "
+            "'casa llena', 'estamos llenos', 'no acepten más reservas' o equivalente."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD; si no se indica, usa hoy.",
+                },
+                "motivo": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "reabrir_reservas",
+        "description": (
+            "Vuelve a permitir reservas para una fecha cerrada por casa llena."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD; si no se indica, usa hoy.",
+                },
+            },
+        },
+    },
+    {
         "name": "enviar_plano_espacio",
         "description": (
             "Envía el plano del salón con las mesas ya reservadas marcadas en rojo "
@@ -629,11 +661,37 @@ async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
     }
 
 
+async def handler_marcar_casa_llena(args: dict, ctx: dict) -> dict:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    fecha = args.get("fecha") or datetime.now(
+        ZoneInfo("America/Bogota")
+    ).date().isoformat()
+    return await cantina_api.marcar_casa_llena(
+        fecha,
+        args.get("motivo") or "Casa llena",
+        ctx.get("miembro_nombre"),
+    )
+
+
+async def handler_reabrir_reservas(args: dict, ctx: dict) -> dict:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    fecha = args.get("fecha") or datetime.now(
+        ZoneInfo("America/Bogota")
+    ).date().isoformat()
+    return await cantina_api.reabrir_reservas(fecha)
+
+
 # ── DISPATCHER ──────────────────────────────────────────────────────────────
 
 Handler = Callable[[dict, dict], Awaitable[dict]]
 
 HANDLERS_EQUIPO: dict[str, Handler] = {
+    "marcar_casa_llena": handler_marcar_casa_llena,
+    "reabrir_reservas": handler_reabrir_reservas,
     "enviar_plano_espacio": handler_enviar_plano_espacio,
     "consultar_reservas_del_dia": handler_consultar_reservas_del_dia,
     "resumen_dia": handler_resumen_dia,

@@ -243,6 +243,28 @@ async def plano() -> dict[str, Any]:
     return await _request("GET", "/api/plano")
 
 
+async def consultar_casa_llena(fecha: str) -> dict[str, Any]:
+    return await _request("GET", "/api/casa-llena", params={"fecha": fecha})
+
+
+async def marcar_casa_llena(
+    fecha: str, motivo: str | None = None, actualizado_por: str | None = None
+) -> dict[str, Any]:
+    return await _request(
+        "POST",
+        "/api/casa-llena",
+        json={
+            "fecha": fecha,
+            "motivo": motivo or "Casa llena",
+            "actualizado_por": actualizado_por,
+        },
+    )
+
+
+async def reabrir_reservas(fecha: str) -> dict[str, Any]:
+    return await _request("DELETE", f"/api/casa-llena/{fecha}")
+
+
 # ── Resumen del día (vista equipo interno) ────────────────────────────────
 
 async def resumen_dia(fecha: str) -> dict[str, Any]:

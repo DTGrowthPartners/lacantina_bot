@@ -293,6 +293,24 @@ TOOL_DEFINITIONS: list[dict] = [
         },
     },
     {
+        "name": "cancelar_reserva_cliente",
+        "description": (
+            "Cancela una reserva activa del propio cliente. Úsala cuando responda "
+            "'Cancelar' a un recordatorio o pida cancelar. Si tiene varias reservas "
+            "y no indicó fecha, la tool pedirá aclarar únicamente la fecha."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {"type": "string", "description": "YYYY-MM-DD opcional"},
+                "reserva_id": {
+                    "type": "integer",
+                    "description": "Opcional; nunca se lo pidas si no lo dio.",
+                },
+            },
+        },
+    },
+    {
         "name": "enviar_como_llegar",
         "description": (
             "Envía al cliente el VIDEO de cómo llegar a La Cantina. Úsalo cuando "
@@ -317,8 +335,8 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "name": "enviar_plano_espacio",
         "description": (
-            "Envía al cliente el plano del salón de La Cantina con las mesas ya "
-            "reservadas marcadas en rojo para la fecha indicada. Úsalo cuando "
+            "Envía al cliente el plano público del salón. NUNCA muestra las mesas "
+            "ocupadas; opcionalmente destaca en verde una mesa recomendada. Úsalo cuando "
             "pregunte por el espacio, cómo es el lugar/salón, dónde está una mesa, "
             "la ubicación de las mesas, el mapa/plano o la distribución. "
             "(OJO: NO es lo mismo que 'cómo llegar'/dirección → para eso usa "
@@ -337,6 +355,13 @@ TOOL_DEFINITIONS: list[dict] = [
                     "type": "string",
                     "description": "YYYY-MM-DD de la noche a consultar. "
                                    "Si no se mencionó fecha, usa hoy.",
+                },
+                "mesa_recomendada": {
+                    "type": "integer",
+                    "description": (
+                        "Mesa libre recomendada, solo si ya consultaste disponibilidad. "
+                        "No inventes una mesa."
+                    ),
                 },
             },
         },
@@ -390,6 +415,19 @@ async def handler_consultar_disponibilidad(args: dict, ctx: dict) -> dict:
     # grupo (grupos grandes, 8+), pero igual hay disponibilidad combinando mesas
     # o en salas privadas. Sin esta señal el bot lee "0" y dice "no hay". 🚫
     if isinstance(res, dict) and res.get("ok", True):
+        if res.get("casa_llena"):
+            res["hay_disponibilidad"] = False
+            res["total_disponibles"] = 0
+            res["mesas_disponibles"] = []
+            res["combos"] = []
+            res["combo_sugerido"] = None
+            res["salas_privadas"] = {"disponibles": []}
+            res["nota_bot"] = (
+                "La Cantina cerró reservas para esta fecha porque está llena. "
+                "Indica con amabilidad que no hay disponibilidad y NO ofrezcas "
+                "mesas, combos ni salas."
+            )
+            return res
         total = res.get("total_disponibles") or 0
         combos = res.get("combos") or []
         salas = (res.get("salas_privadas") or {}).get("disponibles") or []
@@ -632,6 +670,40 @@ async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
     return res
 
 
+async def handler_cancelar_reserva_cliente(args: dict, ctx: dict) -> dict:
+    consulta = await cantina_api.reservas_cliente(ctx.get("cliente_numero"))
+    if not (isinstance(consulta, dict) and consulta.get("ok", True)):
+        return consulta
+    reservas = consulta.get("reservas") or []
+    if args.get("reserva_id"):
+        reservas = [r for r in reservas if r.get("id") == args["reserva_id"]]
+    if args.get("fecha"):
+        reservas = [r for r in reservas if r.get("fecha") == args["fecha"]]
+    if not reservas:
+        return {"ok": False, "error": "No encontré una reserva activa tuya con esos datos."}
+    if len(reservas) > 1:
+        return {
+            "ok": False,
+            "requiere_fecha": True,
+            "fechas": sorted({r.get("fecha") for r in reservas if r.get("fecha")}),
+            "error": "Hay varias reservas. Pregunta únicamente cuál fecha desea cancelar.",
+        }
+
+    reserva = reservas[0]
+    tipo = reserva.get("tipo_reserva")
+    if tipo == "sala":
+        res = await cantina_api.cancelar_reserva_sala(reserva["id"])
+    elif reserva.get("grupo_id"):
+        res = await cantina_api.cancelar_grupo(reserva["grupo_id"])
+    else:
+        res = await cantina_api.cancelar_reserva(reserva["id"])
+    if isinstance(res, dict) and res.get("ok"):
+        res["instruccion"] = (
+            f"Confirma que la reserva del {reserva.get('fecha')} fue cancelada."
+        )
+    return res
+
+
 async def handler_enviar_como_llegar(args: dict, ctx: dict) -> dict:
     """Marca que hay que enviar el video de cómo llegar. El envío real lo hace el
     flow DESPUÉS del mensaje de texto (para que llegue dirección y luego video)."""
@@ -648,18 +720,20 @@ async def handler_enviar_carta(args: dict, ctx: dict) -> dict:
 
 
 async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
-    """Marca que hay que enviar el plano del salón con mesas reservadas (tras el texto)."""
+    """Marca que hay que enviar el plano público del salón."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
     fecha = args.get("fecha") or datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
     ctx["enviar_plano_espacio"] = True
     ctx["plano_fecha"] = fecha
+    mesa = args.get("mesa_recomendada")
+    ctx["plano_mesa_recomendada"] = int(mesa) if str(mesa or "").isdigit() else None
     log.info("tools.enviar_plano_espacio", cliente=ctx.get("cliente_numero"), fecha=fecha)
     return {
         "ok": True,
         "fecha": fecha,
-        "nota": "El plano del salón (con mesas reservadas marcadas en rojo) se enviará "
-                "junto con tu respuesta. Describe cada zona e invita a escoger mesa.",
+        "nota": "El plano público se enviará sin revelar mesas ocupadas. Si se indicó "
+                "una recomendación válida, aparecerá destacada en verde.",
     }
 
 
@@ -731,6 +805,7 @@ HANDLERS: dict[str, Handler] = {
     "crear_reserva_grupo": handler_crear_reserva_grupo,
     "crear_reserva_sala_privada": handler_crear_reserva_sala,
     "consultar_reserva_cliente": handler_consultar_reserva_cliente,
+    "cancelar_reserva_cliente": handler_cancelar_reserva_cliente,
     "registrar_comprobante_cover": handler_registrar_comprobante_cover,
     "enviar_como_llegar": handler_enviar_como_llegar,
     "enviar_carta": handler_enviar_carta,

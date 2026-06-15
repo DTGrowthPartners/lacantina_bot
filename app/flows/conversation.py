@@ -152,31 +152,25 @@ async def _enviar_link_menu(session: AsyncSession, cliente_id: int, cliente_nume
 
 
 async def _enviar_plano_espacio(
-    session: AsyncSession, cliente_id: int, cliente_numero: str, fecha: str | None = None
+    session: AsyncSession,
+    cliente_id: int,
+    cliente_numero: str,
+    fecha: str | None = None,
+    mesa_recomendada: int | None = None,
 ) -> None:
-    """Envía el plano del salón con las mesas reservadas marcadas en rojo."""
+    """Envía un plano para clientes sin revelar la ocupación del negocio."""
     if not _PLANO_ESPACIO.exists():
         log.warning("flow.plano_espacio.no_existe", path=str(_PLANO_ESPACIO))
         return
     try:
-        from app.utils.plano import generar_plano_con_reservas
-        from app.integrations import cantina_api
+        from app.utils.plano import generar_plano_cliente
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
         if not fecha:
             fecha = datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
 
-        # Obtener mesas ya reservadas para esa fecha
-        mesas_reservadas: list[int] = []
-        try:
-            disp = await cantina_api.disponibilidad(fecha)
-            ocupadas = (disp.get("ocupacion") or {}).get("ocupadas") or []
-            mesas_reservadas = [int(m) for m in ocupadas if str(m).isdigit()]
-        except Exception as e:
-            log.warning("flow.plano_espacio.disponibilidad_fail", error=str(e))
-
-        png_bytes = generar_plano_con_reservas(mesas_reservadas)
+        png_bytes = generar_plano_cliente(mesa_recomendada)
         if png_bytes is None:
             png_bytes = _PLANO_ESPACIO.read_bytes()
 
@@ -484,7 +478,7 @@ async def procesar_mensaje_inbound(
 
         if settings.humanization_typing_indicator:
             await enviar_typing(cliente_numero)
-        await sleep_humano(texto_final)
+        await sleep_humano(texto_final, intent=intent)
 
     # 6. Enviar
     try:
@@ -501,7 +495,13 @@ async def procesar_mensaje_inbound(
     if ctx.get("enviar_carta_pdf"):
         await _enviar_link_menu(session, cliente_id, cliente_numero)
     if ctx.get("enviar_plano_espacio"):
-        await _enviar_plano_espacio(session, cliente_id, cliente_numero, ctx.get("plano_fecha"))
+        await _enviar_plano_espacio(
+            session,
+            cliente_id,
+            cliente_numero,
+            ctx.get("plano_fecha"),
+            ctx.get("plano_mesa_recomendada"),
+        )
     if ctx.get("enviar_estado_actual"):
         await _enviar_estado_actual(session, cliente_id, cliente_numero)
     if ctx.get("flyer_evento_fecha"):

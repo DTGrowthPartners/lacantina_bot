@@ -75,6 +75,38 @@ def generar_plano_con_reservas(mesas_reservadas: list[int]) -> bytes:
     return _encode(result)
 
 
+def generar_plano_cliente(mesa_recomendada: int | None = None) -> bytes:
+    """Plano público: no muestra ocupación; solo destaca una recomendación."""
+    try:
+        from PIL import Image, ImageDraw  # type: ignore[import]
+    except ImportError:
+        return _leer_plano_estatico()
+
+    if not _PLANO_PATH.exists():
+        return _leer_plano_estatico()
+
+    img = Image.open(_PLANO_PATH).convert("RGBA")
+    if mesa_recomendada not in MESAS_XY:
+        return _encode(img.convert("RGB"))
+
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    cx, cy = MESAS_XY[mesa_recomendada]
+    r = 18
+    draw.ellipse(
+        [cx - r, cy - r, cx + r, cy + r],
+        fill=(24, 160, 88, 205),
+        outline=(255, 255, 255, 230),
+        width=2,
+    )
+    draw.line(
+        [cx - 8, cy, cx - 2, cy + 7, cx + 10, cy - 8],
+        fill=(255, 255, 255, 255),
+        width=4,
+    )
+    return _encode(Image.alpha_composite(img, overlay).convert("RGB"))
+
+
 def _encode(img) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG")

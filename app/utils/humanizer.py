@@ -65,7 +65,17 @@ def proxima_hora_apertura() -> datetime:
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def _delay_para(longitud: int) -> float:
+INTENTS_RAPIDOS = {
+    "pide_reservar",
+    "consulta_disponibilidad",
+    "consultar_reserva",
+    "envia_comprobante_pago",
+    "modificar_reserva",
+    "cancelar_reserva",
+}
+
+
+def _delay_para(longitud: int, intent: str | None = None) -> float:
     """
     Tiempo realista para 'escribir' un mensaje de N caracteres.
 
@@ -76,6 +86,14 @@ def _delay_para(longitud: int) -> float:
       - + ruido aleatorio
       - clamp a [MIN, MAX]
     """
+    if intent in INTENTS_RAPIDOS:
+        base = random.uniform(5, 9)
+        por_chars = longitud * min(
+            settings.humanization_delay_por_caracter_s, 0.025
+        )
+        ruido = random.uniform(-0.5, 1.5)
+        return max(5.0, min(20.0, base + por_chars + ruido))
+
     base = random.uniform(settings.humanization_delay_min_s,
                           settings.humanization_delay_min_s + 5)
     por_chars = longitud * settings.humanization_delay_por_caracter_s
@@ -85,10 +103,15 @@ def _delay_para(longitud: int) -> float:
                min(settings.humanization_delay_max_s, total))
 
 
-async def sleep_humano(texto_a_enviar: str) -> float:
+async def sleep_humano(texto_a_enviar: str, intent: str | None = None) -> float:
     """Espera un tiempo proporcional al largo del mensaje. Devuelve segundos esperados."""
-    segundos = _delay_para(len(texto_a_enviar or ""))
-    log.debug("humanizer.sleep", segundos=round(segundos, 2), chars=len(texto_a_enviar or ""))
+    segundos = _delay_para(len(texto_a_enviar or ""), intent)
+    log.debug(
+        "humanizer.sleep",
+        segundos=round(segundos, 2),
+        chars=len(texto_a_enviar or ""),
+        intent=intent,
+    )
     await asyncio.sleep(segundos)
     return segundos
 

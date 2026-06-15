@@ -41,6 +41,7 @@ dependencies = [
     # Logs
     "structlog>=24.4",
     "python-dotenv>=1.0",
+    "tzdata>=2025.1",
 
     # Otros
     "python-multipart>=0.0.12",

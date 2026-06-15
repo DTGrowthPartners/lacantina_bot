@@ -44,6 +44,12 @@ async def clasificar(mensaje: str, contexto_reciente: list[str] | None = None) -
     if not mensaje.strip():
         return "otro"
 
+    normalizado = re.sub(r"[^\wáéíóúüñ]+", " ", mensaje.lower()).strip()
+    if normalizado in {"confirmar", "confirmo", "confirmada", "si confirmo"}:
+        return "consultar_reserva"
+    if normalizado in {"cancelar", "cancelo", "cancelala", "cancelarla"}:
+        return "cancelar_reserva"
+
     if re.search(
         r"\b(?:conf[ií]rmame|confirmar|consultar|ver|recordar)\b.{0,30}\bmi reserva\b"
         r"|\bmi reserva\b.{0,30}\b(?:sigue|est[aá]|activa|confirmada|datos)\b"

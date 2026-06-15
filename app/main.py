@@ -1300,7 +1300,9 @@ async def webhook(
     # Procesar fuera del request. asyncio.create_task corre en el mismo loop
     # y es más predecible que BackgroundTasks de FastAPI.
     for cliente_id, cliente_numero, msg in para_procesar:
-        _track_task(asyncio.create_task(_procesar_async(cliente_id, cliente_numero, msg, _identidad_principal())))
+        _encolar_cliente_debounce(
+            cliente_id, cliente_numero, msg, _identidad_principal()
+        )
 
     return {"status": "ok", "procesados": resultados}
 
@@ -1356,6 +1358,8 @@ async def _bot_bloqueado_para_whitelist() -> bool:
 # llegan varios webhooks casi simultáneos (cliente manda 2-3 fotos seguidas).
 _cliente_locks: dict[int, asyncio.Lock] = {}
 _equipo_locks: dict[str, asyncio.Lock] = {}
+_cliente_debounce_tasks: dict[int, asyncio.Task] = {}
+_CLIENTE_DEBOUNCE_S = 4.0
 
 
 def _lock_for_cliente(cliente_id: int) -> asyncio.Lock:
@@ -1364,6 +1368,42 @@ def _lock_for_cliente(cliente_id: int) -> asyncio.Lock:
         lock = asyncio.Lock()
         _cliente_locks[cliente_id] = lock
     return lock
+
+
+def _encolar_cliente_debounce(
+    cliente_id: int,
+    cliente_numero: str,
+    msg: MensajeWhapi,
+    identidad: "Identidad | None" = None,
+) -> None:
+    """Agrupa ráfagas de mensajes antes de gastar una llamada a Claude."""
+    task = asyncio.create_task(
+        _procesar_cliente_debounced(cliente_id, cliente_numero, msg, identidad)
+    )
+    _cliente_debounce_tasks[cliente_id] = task
+    _track_task(task)
+
+
+async def _procesar_cliente_debounced(
+    cliente_id: int,
+    cliente_numero: str,
+    msg: MensajeWhapi,
+    identidad: "Identidad | None" = None,
+) -> None:
+    await asyncio.sleep(_CLIENTE_DEBOUNCE_S)
+    actual = asyncio.current_task()
+    if _cliente_debounce_tasks.get(cliente_id) is not actual:
+        log.info(
+            "webhook.debounce_agrupado",
+            cliente=cliente_numero,
+            msg_id=msg.id,
+        )
+        return
+    try:
+        await _procesar_async(cliente_id, cliente_numero, msg, identidad)
+    finally:
+        if _cliente_debounce_tasks.get(cliente_id) is actual:
+            _cliente_debounce_tasks.pop(cliente_id, None)
 
 
 def _equipo_chat_key(miembro, responder_a: str | None = None) -> str:

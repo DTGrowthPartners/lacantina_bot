@@ -14,6 +14,18 @@ class PlanoMarcadoresTests(unittest.TestCase):
                 self.assertGreaterEqual(y, 0)
                 self.assertLess(y, 735)
 
+    def test_plano_cliente_solo_marca_recomendacion_en_verde(self):
+        datos = plano.generar_plano_cliente(21)
+        self.assertIsNotNone(datos)
+        from PIL import Image
+        import io
+
+        img = Image.open(io.BytesIO(datos)).convert("RGB")
+        x, y = plano.MESAS_XY[21]
+        r, g, b = img.getpixel((x, y))
+        self.assertGreater(g, r)
+        self.assertGreater(g, b)
+
     def test_el_marcador_se_dibuja_en_el_centro_configurado(self):
         try:
             from PIL import Image

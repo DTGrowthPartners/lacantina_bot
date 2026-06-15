@@ -102,6 +102,13 @@ def _fmt_resumen(payload: dict) -> str:
     return "\n".join(lineas) if lineas else "(sin datos escalares)"
 
 
+def _formatear_cop(valor: Any) -> str:
+    try:
+        return f"${int(float(valor)):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return str(valor or "")
+
+
 def _reservas_lista(resp: dict) -> list[dict]:
     """Normaliza la respuesta de listar_reservas a una lista de dicts."""
     if not isinstance(resp, dict) or not resp.get("ok", True):
@@ -206,6 +213,150 @@ async def accion_recordatorio_cover(session: AsyncSession, params: dict) -> dict
     )
     enviado = await notificar_equipo(mensaje)
     return {"ok": enviado, "fecha": fecha, "pendientes": len(pendientes)}
+
+
+def _reservas_logicas(reservas: list[dict]) -> list[dict]:
+    """Deduplica las filas de una reserva grupal para enviar un solo mensaje."""
+    salida: list[dict] = []
+    vistos: set[str] = set()
+    for reserva in reservas:
+        clave = str(reserva.get("grupo_id") or f"mesa:{reserva.get('id')}")
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        salida.append(reserva)
+    return salida
+
+
+async def _recordatorio_ya_enviado(
+    session: AsyncSession, cliente_id: int, clave: str
+) -> bool:
+    row = (await session.execute(sa_text("""
+        SELECT 1 FROM conversaciones
+        WHERE cliente_id = :cid
+          AND metadata->>'recordatorio_reserva' = :clave
+        LIMIT 1
+    """), {"cid": cliente_id, "clave": clave})).first()
+    return bool(row)
+
+
+async def accion_recordatorio_reservas_clientes(
+    session: AsyncSession, params: dict
+) -> dict:
+    """Recuerda reservas a clientes y acepta respuestas Confirmar/Cancelar."""
+    from app.db.repos import get_or_create_cliente, guardar_conversacion
+
+    offset_dias = int(params.get("offset_dias", 0))
+    tipo = str(params.get("tipo") or "3h")
+    fecha = params.get("fecha") or _hoy(offset_dias)
+    mesas = _reservas_logicas(
+        _reservas_lista(await cantina_api.listar_reservas(fecha))
+    )
+    salas = _reservas_lista(await cantina_api.listar_reservas_salas(fecha))
+    reservas = mesas + salas
+
+    enviados = 0
+    omitidos = 0
+    for reserva in reservas:
+        telefono = str(reserva.get("telefono") or "").strip()
+        if not telefono:
+            omitidos += 1
+            continue
+        numero = telefono if telefono.startswith("+") else "+" + telefono
+        identidad = (
+            reserva.get("grupo_id")
+            or f"{reserva.get('tipo_reserva', 'reserva')}:{reserva.get('id')}"
+        )
+        clave = f"{tipo}:{fecha}:{identidad}"
+        cliente = await get_or_create_cliente(session, numero)
+        if await _recordatorio_ya_enviado(session, cliente.id, clave):
+            omitidos += 1
+            continue
+
+        nombre = reserva.get("nombre_cliente") or ""
+        mesas_reserva = reserva.get("grupo_mesas")
+        if mesas_reserva:
+            ubicacion = "mesas " + ", ".join(str(m) for m in mesas_reserva)
+        elif reserva.get("mesa_numero"):
+            ubicacion = f"mesa {reserva['mesa_numero']}"
+        else:
+            ubicacion = reserva.get("sala_nombre") or "tu espacio reservado"
+        momento = "mañana" if tipo == "24h" else "hoy"
+        mensaje = (
+            f"Hola{f' {nombre}' if nombre else ''}. Te recordamos tu reserva "
+            f"para {momento}, {fecha}, en {ubicacion} para "
+            f"{reserva.get('num_personas', '?')} persona(s).\n\n"
+            "Responde *Confirmar* para mantenerla o *Cancelar* si ya no puedes asistir."
+        )
+        await enviar_texto(numero, mensaje)
+        await guardar_conversacion(
+            session,
+            cliente_id=cliente.id,
+            direccion="outbound",
+            tipo="texto",
+            contenido=mensaje,
+            metadata={
+                "recordatorio_reserva": clave,
+                "tipo_recordatorio": tipo,
+                "fecha_reserva": fecha,
+            },
+        )
+        await session.commit()
+        enviados += 1
+
+    return {
+        "ok": True,
+        "fecha": fecha,
+        "tipo": tipo,
+        "enviados": enviados,
+        "omitidos": omitidos,
+    }
+
+
+async def accion_recordatorio_cover_clientes(
+    session: AsyncSession, params: dict
+) -> dict:
+    """Recuerda directamente al cliente cuando su cover sigue pendiente."""
+    from app.db.repos import get_or_create_cliente, guardar_conversacion
+
+    fecha = params.get("fecha") or _hoy(int(params.get("offset_dias", 0)))
+    reservas = _reservas_logicas(
+        _reservas_lista(await cantina_api.listar_reservas(fecha))
+    )
+    pendientes = [r for r in reservas if r.get("cover_estado") == "pendiente"]
+    enviados = 0
+    for reserva in pendientes:
+        telefono = str(reserva.get("telefono") or "").strip()
+        if not telefono:
+            continue
+        numero = telefono if telefono.startswith("+") else "+" + telefono
+        identidad = reserva.get("grupo_id") or reserva.get("id")
+        clave = f"cover:{fecha}:{identidad}"
+        cliente = await get_or_create_cliente(session, numero)
+        if await _recordatorio_ya_enviado(session, cliente.id, clave):
+            continue
+        monto = reserva.get("monto_cover")
+        detalle = f" por {_formatear_cop(monto)}" if monto else ""
+        mensaje = (
+            f"Hola. Tu reserva para el {fecha} tiene el cover pendiente{detalle}. "
+            "Puedes enviarnos el comprobante por este chat para validarlo."
+        )
+        await enviar_texto(numero, mensaje)
+        await guardar_conversacion(
+            session,
+            cliente_id=cliente.id,
+            direccion="outbound",
+            tipo="texto",
+            contenido=mensaje,
+            metadata={
+                "recordatorio_reserva": clave,
+                "tipo_recordatorio": "cover",
+                "fecha_reserva": fecha,
+            },
+        )
+        await session.commit()
+        enviados += 1
+    return {"ok": True, "fecha": fecha, "enviados": enviados}
 
 
 async def accion_saturacion_check(session: AsyncSession, params: dict) -> dict:
@@ -507,6 +658,16 @@ ACCIONES_DISPONIBLES: dict[str, dict[str, Any]] = {
         "handler": accion_recordatorio_cover,
         "descripcion": "Recuerda al equipo los covers en estado 'pendiente' del día.",
         "parametros": {"fecha": "YYYY-MM-DD (default hoy)"},
+    },
+    "recordatorio_reservas_clientes": {
+        "handler": accion_recordatorio_reservas_clientes,
+        "descripcion": "Envía recordatorio 24h/3h al cliente con Confirmar o Cancelar.",
+        "parametros": {"offset_dias": "int", "tipo": "24h|3h"},
+    },
+    "recordatorio_cover_clientes": {
+        "handler": accion_recordatorio_cover_clientes,
+        "descripcion": "Recuerda al cliente que su cover sigue pendiente.",
+        "parametros": {"offset_dias": "int (default 0)"},
     },
     "saturacion_check": {
         "handler": accion_saturacion_check,
