@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -1359,6 +1360,7 @@ async def _bot_bloqueado_para_whitelist() -> bool:
 _cliente_locks: dict[int, asyncio.Lock] = {}
 _equipo_locks: dict[str, asyncio.Lock] = {}
 _cliente_debounce_tasks: dict[int, asyncio.Task] = {}
+_cliente_debounce_mensajes: dict[int, list[MensajeWhapi]] = {}
 _CLIENTE_DEBOUNCE_S = 4.0
 
 
@@ -1377,6 +1379,7 @@ def _encolar_cliente_debounce(
     identidad: "Identidad | None" = None,
 ) -> None:
     """Agrupa ráfagas de mensajes antes de gastar una llamada a Claude."""
+    _cliente_debounce_mensajes.setdefault(cliente_id, []).append(msg)
     task = asyncio.create_task(
         _procesar_cliente_debounced(cliente_id, cliente_numero, msg, identidad)
     )
@@ -1399,11 +1402,37 @@ async def _procesar_cliente_debounced(
             msg_id=msg.id,
         )
         return
+    lote = _cliente_debounce_mensajes.pop(cliente_id, [msg])
+    msg_agrupado = _combinar_mensajes_debounce(lote)
     try:
-        await _procesar_async(cliente_id, cliente_numero, msg, identidad)
+        await _procesar_async(cliente_id, cliente_numero, msg_agrupado, identidad)
     finally:
         if _cliente_debounce_tasks.get(cliente_id) is actual:
             _cliente_debounce_tasks.pop(cliente_id, None)
+
+
+def _combinar_mensajes_debounce(
+    mensajes: list[MensajeWhapi],
+) -> MensajeWhapi:
+    """Une textos de la ráfaga y conserva el adjunto más reciente."""
+    if not mensajes:
+        raise ValueError("mensajes no puede estar vacío")
+    ultimo = mensajes[-1]
+    con_media = next(
+        (m for m in reversed(mensajes) if m.media_url),
+        None,
+    )
+    base = con_media or ultimo
+    textos = [str(m.texto).strip() for m in mensajes if (m.texto or "").strip()]
+    texto = "\n".join(dict.fromkeys(textos)) or base.texto
+    return replace(
+        base,
+        id=ultimo.id,
+        timestamp=ultimo.timestamp,
+        texto=texto,
+        from_number=ultimo.from_number,
+        chat_id=ultimo.chat_id,
+    )
 
 
 def _equipo_chat_key(miembro, responder_a: str | None = None) -> str:
