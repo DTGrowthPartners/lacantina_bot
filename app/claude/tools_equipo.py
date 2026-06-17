@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Awaitable, Callable
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text as sa_text
 
@@ -268,6 +270,24 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "type": "object",
             "properties": {"reserva_id": {"type": "integer"}},
             "required": ["reserva_id"],
+        },
+    },
+    {
+        "name": "eventos_del_mes",
+        "description": (
+            "Lista los eventos/covers registrados en el backend para un mes completo. "
+            "Úsala cuando el equipo pregunte 'qué eventos hay este mes', "
+            "'eventos de junio', 'agenda de eventos del mes' o similar. "
+            "No respondas con Instagram ni digas que no tienes herramienta."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mes": {
+                    "type": "string",
+                    "description": "Mes en formato YYYY-MM. Si no se menciona, usa el mes actual.",
+                },
+            },
         },
     },
     {
@@ -526,6 +546,67 @@ async def handler_marcar_cover_invitado(args: dict, ctx: dict) -> dict:
     return await cantina_api.actualizar_reserva(
         args.get("reserva_id"), {"cover_estado": "invitado"},
     )
+
+
+def _mes_actual_bogota() -> str:
+    return datetime.now(ZoneInfo("America/Bogota")).strftime("%Y-%m")
+
+
+def _normalizar_mes(raw: str | None) -> tuple[str | None, str | None]:
+    value = (raw or "").strip()
+    if not value:
+        return _mes_actual_bogota(), None
+    # Permite que el modelo mande YYYY-MM-DD; se usa el mes de esa fecha.
+    if len(value) >= 7 and value[4] == "-":
+        month = value[:7]
+        try:
+            datetime.strptime(month, "%Y-%m")
+            return month, None
+        except ValueError:
+            pass
+    return None, "mes debe venir en formato YYYY-MM"
+
+
+def _extraer_eventos(resp: dict) -> list[dict]:
+    if not isinstance(resp, dict) or not resp.get("ok", True):
+        return []
+    data = resp.get("data", resp)
+    if isinstance(data, dict):
+        eventos = data.get("eventos")
+        if isinstance(eventos, list):
+            return [e for e in eventos if isinstance(e, dict)]
+        evento = data.get("evento")
+        if isinstance(evento, dict):
+            return [evento]
+        if data.get("fecha") or data.get("nombre"):
+            return [data]
+    if isinstance(data, list):
+        return [e for e in data if isinstance(e, dict)]
+    return []
+
+
+async def handler_eventos_del_mes(args: dict, ctx: dict) -> dict:
+    mes, error = _normalizar_mes(args.get("mes"))
+    if error:
+        return {"ok": False, "error": error}
+    res = await cantina_api.listar_eventos()
+    if not isinstance(res, dict) or not res.get("ok", False):
+        return res
+    eventos = [
+        e for e in _extraer_eventos(res)
+        if str(e.get("fecha") or "").startswith(mes or "")
+    ]
+    eventos.sort(key=lambda e: str(e.get("fecha") or ""))
+    return {
+        "ok": True,
+        "mes": mes,
+        "total": len(eventos),
+        "eventos": eventos,
+        "nota": (
+            "Responde por WhatsApp con una lista corta por fecha. "
+            "Si total=0, di que no hay eventos registrados en backend para ese mes."
+        ),
+    }
 
 
 async def handler_crear_evento(args: dict, ctx: dict) -> dict:
@@ -933,6 +1014,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "marcar_cover_pagado": handler_marcar_cover_pagado,
     "marcar_cover_en_entrada": handler_marcar_cover_en_entrada,
     "marcar_cover_invitado": handler_marcar_cover_invitado,
+    "eventos_del_mes": handler_eventos_del_mes,
     "crear_evento": handler_crear_evento,
     "guardar_flyer_evento": handler_guardar_flyer_evento,
     "borrar_evento": handler_borrar_evento,
