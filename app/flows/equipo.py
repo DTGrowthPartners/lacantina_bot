@@ -11,8 +11,10 @@ Distinto al flow de cliente:
 from __future__ import annotations
 
 import base64
+import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import desc, select, update
@@ -118,6 +120,70 @@ def _historial_para_contexto(rows: list[Conversacion]) -> str:
             continue
         autor = "Equipo" if h.direccion == "inbound" else "Bot"
         lineas.append(f"- {autor}: {contenido[:700]}")
+    return "\n".join(lineas)
+
+
+_MESES_ES = {
+    "enero": 1,
+    "febrero": 2,
+    "marzo": 3,
+    "abril": 4,
+    "mayo": 5,
+    "junio": 6,
+    "julio": 7,
+    "agosto": 8,
+    "septiembre": 9,
+    "setiembre": 9,
+    "octubre": 10,
+    "noviembre": 11,
+    "diciembre": 12,
+}
+
+
+def _mes_pedido_eventos(texto: str) -> str | None:
+    limpio = re.sub(r"@\d+", " ", texto or "").lower()
+    if "evento" not in limpio:
+        return None
+    ahora = datetime.now(ZoneInfo("America/Bogota"))
+    m_iso = re.search(r"\b(20\d{2})-(0[1-9]|1[0-2])\b", limpio)
+    if m_iso:
+        return m_iso.group(0)
+    year_match = re.search(r"\b(20\d{2})\b", limpio)
+    year = int(year_match.group(1)) if year_match else ahora.year
+    for nombre, numero in _MESES_ES.items():
+        if nombre in limpio:
+            return f"{year:04d}-{numero:02d}"
+    if "mes" in limpio or "agenda" in limpio:
+        return ahora.strftime("%Y-%m")
+    return None
+
+
+def _formatear_eventos_mes(res: dict, mes: str) -> str:
+    if not isinstance(res, dict) or not res.get("ok"):
+        return "No pude consultar los eventos del mes en el backend ahora mismo."
+    eventos = res.get("eventos") or []
+    if not eventos:
+        return f"No hay eventos registrados en el backend para {mes}."
+    lineas = [f"*Eventos registrados para {mes}:*"]
+    for e in eventos:
+        fecha = str(e.get("fecha") or "?")
+        nombre = str(e.get("nombre") or "Evento")
+        artista = str(e.get("artista") or "").strip()
+        tiene_cover = bool(e.get("tiene_cover"))
+        cover = e.get("valor_cover")
+        if tiene_cover and cover:
+            try:
+                cover_txt = f"Cover ${int(cover):,}".replace(",", ".")
+            except Exception:
+                cover_txt = f"Cover {cover}"
+        elif tiene_cover:
+            cover_txt = "Con cover"
+        else:
+            cover_txt = "Entrada libre"
+        detalle = f"{fecha} - {nombre}"
+        if artista:
+            detalle += f" ({artista})"
+        lineas.append(f"- {detalle} · {cover_txt}")
     return "\n".join(lineas)
 
 
@@ -358,6 +424,31 @@ async def procesar_mensaje_equipo(
         "video_mime": video_mime,
     }
 
+    mes_eventos = _mes_pedido_eventos(instruccion)
+    if mes_eventos and not imagen_b64 and msg.tipo == "texto":
+        result = await HANDLERS_EQUIPO["eventos_del_mes"]({"mes": mes_eventos}, ctx_tool)
+        texto_final = _formatear_eventos_mes(result, mes_eventos)
+        try:
+            await enviar_texto(destino_envio, texto_final)
+        except Exception as e:
+            log.error("flow_equipo.eventos_mes_directo.enviar_fail", error=str(e))
+        await guardar_conversacion(
+            session,
+            cliente_id=cliente_proxy.id,
+            direccion="outbound",
+            tipo="texto",
+            contenido=texto_final,
+            modelo="directo",
+            metadata={
+                "es_equipo": True,
+                "miembro": miembro.nombre,
+                "tools": ["eventos_del_mes"],
+                "directo": True,
+            },
+        )
+        log.info("flow_equipo.eventos_mes_directo", miembro=miembro.nombre, mes=mes_eventos)
+        return
+
     tokens_in = tokens_out = cache_r = cache_w = 0
     costo = Decimal("0")
     tools_usadas: list[str] = []
@@ -407,7 +498,7 @@ async def procesar_mensaje_equipo(
             try:
                 from app.db.repos import registrar_alerta_fabio
                 await registrar_alerta_fabio(
-                    session, tipo="claude_api_fail",
+                    session, tipo="error_sistema",
                     mensaje=f"Falló Claude (flujo equipo, {dest or miembro.nombre}). Error: {str(e)[:300]}.",
                 )
             except Exception:

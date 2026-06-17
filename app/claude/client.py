@@ -145,7 +145,7 @@ async def conversar(
                 if session_ctx is not None:
                     await registrar_alerta_fabio(
                         session_ctx,
-                        tipo="claude_api_fail",
+                        tipo="error_sistema",
                         mensaje=(
                             f"Falló Claude API atendiendo a {cliente_n}. "
                             f"Error: {str(e)[:300]}. El cliente quedó sin respuesta."
