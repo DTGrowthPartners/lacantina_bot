@@ -11,14 +11,21 @@ Todas las tools golpean el backend de mesas (`cantina_api.py`).
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 from typing import Awaitable, Callable
 
+from sqlalchemy import text as sa_text
+
 from app.config import get_settings
+from app.difusiones import SegmentoDifusion, ejecutar_difusion_background, preparar_difusion
 from app.integrations import cantina_api
 from app.logging_setup import log
 
-_FLYERS = Path(get_settings().data_dir) / "media" / "flyers"
+_settings = get_settings()
+_FLYERS = Path(_settings.data_dir) / "media" / "flyers"
+_DIFUSIONES_MEDIA = Path(_settings.data_dir) / "media" / "difusiones"
 _PLANO = Path(get_settings().data_dir) / "media" / "plano-espacio.png"
 _EXT_POR_MIME = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
@@ -327,6 +334,59 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
         },
     },
     {
+        "name": "crear_difusion_evento",
+        "description": (
+            "Crea una difusión masiva de evento/promo para la base de contactos. "
+            "Úsala cuando el equipo mande una imagen/flyer y diga 'difunde esto', "
+            "'haz difusión del evento', 'mándalo a la base', 'difunde esta imagen'. "
+            "Si hay imagen adjunta, la guarda y la envía como flyer con caption. "
+            "Por defecto usa el tag 'Base difusión contacts.vcf' y envía lentamente "
+            "para reducir riesgo de bloqueo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mensaje": {
+                    "type": "string",
+                    "description": (
+                        "Mensaje/caption final que recibirá la audiencia. Puede usar "
+                        "{primer_nombre}. Debe ser alusivo al evento y sonar humano."
+                    ),
+                },
+                "nombre": {
+                    "type": "string",
+                    "description": "Nombre interno de la campaña.",
+                },
+                "tag_nombre": {
+                    "type": "string",
+                    "description": "Tag de audiencia. Default: Base difusión contacts.vcf",
+                },
+                "etiqueta": {
+                    "type": "string",
+                    "enum": ["todos", "cliente", "prospecto", "sin_clasificar"],
+                    "description": "Filtro adicional por etiqueta. Default: todos.",
+                },
+                "delay_min_s": {
+                    "type": "number",
+                    "description": "Delay mínimo entre contactos. Default seguro: 45.",
+                },
+                "delay_max_s": {
+                    "type": "number",
+                    "description": "Delay máximo entre contactos. Default seguro: 90.",
+                },
+                "iniciar_envio": {
+                    "type": "boolean",
+                    "description": "True para empezar a enviar de una vez. Default true.",
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "True prepara/recorre sin enviar WhatsApp real.",
+                },
+            },
+            "required": ["mensaje"],
+        },
+    },
+    {
         "name": "publicar_estado",
         "description": (
             "Publica la IMAGEN o VIDEO ADJUNTO como estado de WhatsApp de La Cantina "
@@ -529,6 +589,115 @@ async def handler_avisar_cliente(args: dict, ctx: dict) -> dict:
             log.debug("tools_equipo.avisar_cliente.persist_fail", error=str(e))
     log.info("tools_equipo.avisar_cliente", tel=numero, por=ctx.get("miembro_nombre"))
     return {"ok": True, "enviado_a": numero}
+
+
+async def handler_crear_difusion_evento(args: dict, ctx: dict) -> dict:
+    """Crea y opcionalmente inicia una difusión desde el chat del equipo."""
+    if (ctx.get("rol") or "").lower() == "cliente":
+        return {"ok": False, "error": "Un cliente whitelisted no puede crear difusiones."}
+    session = ctx.get("session")
+    if session is None:
+        return {"ok": False, "error": "sin sesión de BD"}
+
+    mensaje = (args.get("mensaje") or "").strip()
+    if not mensaje:
+        return {"ok": False, "error": "mensaje requerido"}
+
+    imagen_bytes = ctx.get("imagen_bytes")
+    imagen_mime = ctx.get("imagen_mime") or "image/jpeg"
+    if not imagen_bytes:
+        return {
+            "ok": False,
+            "error": (
+                "Para difundir un flyer necesito que adjuntes la imagen en el mismo mensaje. "
+                "Si quieres solo texto, créala desde /admin/difusiones."
+            ),
+        }
+
+    tag_nombre = (args.get("tag_nombre") or "Base difusión contacts.vcf").strip()
+    tag_row = (await session.execute(sa_text(
+        "SELECT id FROM tags WHERE lower(nombre)=lower(:nombre) LIMIT 1"
+    ), {"nombre": tag_nombre})).first()
+    if not tag_row:
+        return {"ok": False, "error": f"No existe el tag de audiencia '{tag_nombre}'."}
+
+    from app.difusiones import normalizar_etiqueta_difusion
+    from decimal import Decimal
+
+    etiqueta = normalizar_etiqueta_difusion(args.get("etiqueta") or "todos")
+    nombre = (args.get("nombre") or "Difusión evento desde WhatsApp").strip()[:140]
+    delay_min = Decimal(str(args.get("delay_min_s") or 45))
+    delay_max = Decimal(str(args.get("delay_max_s") or 90))
+    dry_run = bool(args.get("dry_run") or False)
+    iniciar_envio = bool(args.get("iniciar_envio", True))
+
+    difusion_id = await preparar_difusion(
+        session,
+        nombre=nombre,
+        mensaje=mensaje,
+        media_url=None,
+        segmento=SegmentoDifusion(
+            etiqueta=etiqueta,
+            tag_id=int(tag_row[0]),
+            incluir_sin_chat=True,
+        ),
+        delay_min_s=delay_min,
+        delay_max_s=delay_max,
+        dry_run=dry_run,
+        creado_por=ctx.get("miembro_nombre") or "whatsapp",
+    )
+
+    ext = _EXT_POR_MIME.get((imagen_mime or "").lower(), ".jpg")
+    _DIFUSIONES_MEDIA.mkdir(parents=True, exist_ok=True)
+    media_path = _DIFUSIONES_MEDIA / f"difusion-{difusion_id}{ext}"
+    media_path.write_bytes(imagen_bytes)
+
+    await session.execute(sa_text(
+        """
+        UPDATE difusiones
+           SET metadata = metadata || CAST(:metadata AS jsonb),
+               updated_at = now()
+         WHERE id=:id
+        """
+    ), {
+        "id": difusion_id,
+        "metadata": json.dumps({
+            "media_path": str(media_path),
+            "media_mime": imagen_mime,
+            "creada_desde": "whatsapp_equipo",
+            "tag_nombre": tag_nombre,
+        }),
+    })
+    await session.commit()
+
+    total = (await session.execute(sa_text(
+        "SELECT total_destinatarios FROM difusiones WHERE id=:id"
+    ), {"id": difusion_id})).scalar_one()
+    if iniciar_envio:
+        asyncio.create_task(ejecutar_difusion_background(difusion_id))
+
+    log.info(
+        "tools_equipo.crear_difusion_evento",
+        difusion_id=difusion_id,
+        total=total,
+        iniciar_envio=iniciar_envio,
+        dry_run=dry_run,
+        tag=tag_nombre,
+    )
+    return {
+        "ok": True,
+        "difusion_id": difusion_id,
+        "destinatarios": int(total or 0),
+        "tag": tag_nombre,
+        "delay": f"{delay_min}-{delay_max}s",
+        "iniciada": iniciar_envio,
+        "dry_run": dry_run,
+        "nota": (
+            "Difusión preparada"
+            + (" y arrancada en segundo plano." if iniciar_envio else ".")
+            + " Responde con una confirmación corta y aclara que irá lenta."
+        ),
+    }
 
 
 async def handler_publicar_estado(args: dict, ctx: dict) -> dict:
@@ -768,6 +937,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "guardar_flyer_evento": handler_guardar_flyer_evento,
     "borrar_evento": handler_borrar_evento,
     "avisar_cliente": handler_avisar_cliente,
+    "crear_difusion_evento": handler_crear_difusion_evento,
     "reenviar_comprobante_cliente": handler_reenviar_comprobante_cliente,
     "publicar_estado": handler_publicar_estado,
     "enviar_estado_actual": handler_enviar_estado_actual,

@@ -108,6 +108,7 @@ psql cantina_db -f schema.sql
 psql cantina_db -f migrations/002_equipo_a_db.sql
 psql cantina_db -f migrations/008_etiquetas_contacto.sql
 psql cantina_db -f migrations/009_tags_seguimiento.sql
+psql cantina_db -f migrations/013_difusiones.sql
 
 uvicorn app.main:app --host 127.0.0.1 --port 8012 --reload
 ```

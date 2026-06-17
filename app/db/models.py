@@ -283,3 +283,47 @@ class TareaProgramada(Base):
 
     def __str__(self) -> str:
         return f"{self.nombre} ({self.accion})"
+
+
+class Difusion(Base):
+    """Campaña de difusión WhatsApp con destinatarios congelados."""
+    __tablename__ = "difusiones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(140))
+    mensaje: Mapped[str] = mapped_column(Text)
+    media_url: Mapped[str | None] = mapped_column(Text)
+    filtro_etiqueta: Mapped[str] = mapped_column(String(20), default="todos")
+    filtro_tag_id: Mapped[int | None] = mapped_column(ForeignKey("tags.id", ondelete="SET NULL"))
+    incluir_sin_chat: Mapped[bool] = mapped_column(Boolean, default=True)
+    estado: Mapped[str] = mapped_column(String(20), default="borrador")
+    total_destinatarios: Mapped[int] = mapped_column(Integer, default=0)
+    enviados: Mapped[int] = mapped_column(Integer, default=0)
+    fallidos: Mapped[int] = mapped_column(Integer, default=0)
+    omitidos: Mapped[int] = mapped_column(Integer, default=0)
+    delay_min_s: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=12)
+    delay_max_s: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=25)
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=False)
+    creado_por: Mapped[str | None] = mapped_column(String(60))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DifusionDestinatario(Base):
+    """Estado de envío de una difusión para un contacto concreto."""
+    __tablename__ = "difusion_destinatarios"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    difusion_id: Mapped[int] = mapped_column(ForeignKey("difusiones.id", ondelete="CASCADE"))
+    cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id", ondelete="SET NULL"))
+    numero_whatsapp: Mapped[str] = mapped_column(String(32))
+    nombre: Mapped[str | None] = mapped_column(String(255))
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente")
+    whapi_message_id: Mapped[str | None] = mapped_column(String(100))
+    error: Mapped[str | None] = mapped_column(Text)
+    enviado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

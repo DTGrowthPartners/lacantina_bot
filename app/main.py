@@ -29,6 +29,7 @@ from app.admin.eventos import router as eventos_router
 from app.admin.contexto import router as contexto_router
 from app.admin.estados import router as estados_router
 from app.admin.automatizaciones import router as automatizaciones_router
+from app.admin.difusiones import router as difusiones_router
 from app.admin.views import ALL_VIEWS
 from app.api_externa import router as api_externa_router
 from app.config import get_settings
@@ -143,6 +144,7 @@ app.include_router(grupos_router)
 app.include_router(etiquetas_router)
 app.include_router(estados_router)
 app.include_router(automatizaciones_router)
+app.include_router(difusiones_router)
 app.include_router(api_externa_router)
 
 # SQLAdmin: CRUD automático sobre todos los modelos
@@ -698,6 +700,7 @@ document.addEventListener("DOMContentLoaded", function() {
     )
     # Convertimos el HTML del sidebar en algo que body.insertBefore pueda usar
     sidebar_js_safe = sidebar.replace("\\", "\\\\").replace("`", "\\`")
+    icon_sprite_js_safe = ICON_SPRITE.replace("`", "\\`")
     inject_sidebar_js = f"""
 <script>
 document.addEventListener("DOMContentLoaded", function() {{
@@ -723,7 +726,7 @@ document.addEventListener("DOMContentLoaded", function() {{
   if (!document.getElementById("admin-icon-sprite")) {{
     var s = document.createElement("div");
     s.id = "admin-icon-sprite";
-    s.innerHTML = `{ICON_SPRITE.replace("`", "\\`")}`;
+    s.innerHTML = `{icon_sprite_js_safe}`;
     s.style.display = "none";
     document.body.appendChild(s);
   }}
