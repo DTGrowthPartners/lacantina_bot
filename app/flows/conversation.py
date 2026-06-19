@@ -36,6 +36,7 @@ from app.config import get_settings
 from app.db.models import Cliente, Conversacion
 from app.db.repos import bot_activo, guardar_conversacion, ultimos_mensajes
 from app.logging_setup import log
+from app.menu_media import MENU_URL, imagenes_menu
 from app.utils.humanizer import (
     dentro_horario,
     proxima_hora_apertura,
@@ -62,7 +63,6 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 
 
 _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
-_MENU_URL = "https://menu.pirpos.com/menu/5ff4ce6ffe4b9a75e193fcb9"
 _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _FLYERS_DIR = Path(settings.data_dir) / "media" / "flyers"
 
@@ -168,16 +168,42 @@ async def _enviar_flyer_evento(session: AsyncSession, cliente_id: int, cliente_n
 
 
 async def _enviar_link_menu(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
-    """Envía el link del menú digital al cliente (tras el texto)."""
+    """Envia las paginas de la carta como imagen; cae al link si faltan."""
     try:
-        await enviar_texto(cliente_numero, _MENU_URL)
+        paginas = imagenes_menu()
+        if paginas:
+            total = len(paginas)
+            for indice, pagina in enumerate(paginas, start=1):
+                await enviar_imagen_bytes(
+                    cliente_numero,
+                    pagina.read_bytes(),
+                    mime="image/png",
+                    filename=pagina.name,
+                    caption=f"Carta de La Cantina - pagina {indice}/{total}",
+                )
+                await guardar_conversacion(
+                    session,
+                    cliente_id=cliente_id,
+                    direccion="outbound",
+                    tipo="imagen",
+                    contenido=f"[carta del menu - pagina {indice}/{total}]",
+                    metadata={"media": "menu_image", "pagina": indice, "total": total},
+                )
+            log.info("flow.menu_imagenes.enviadas", cliente=cliente_numero, paginas=total)
+            return
+
+        await enviar_texto(cliente_numero, MENU_URL)
         await guardar_conversacion(
-            session, cliente_id=cliente_id, direccion="outbound", tipo="texto",
-            contenido=_MENU_URL, metadata={"media": "menu_link"},
+            session,
+            cliente_id=cliente_id,
+            direccion="outbound",
+            tipo="texto",
+            contenido=MENU_URL,
+            metadata={"media": "menu_link", "fallback": True},
         )
-        log.info("flow.menu_link.enviado", cliente=cliente_numero)
+        log.warning("flow.menu_imagenes.fallback_link", cliente=cliente_numero)
     except Exception as e:
-        log.warning("flow.menu_link.fail", error=str(e))
+        log.warning("flow.menu_imagenes.fail", error=str(e))
 
 
 async def _enviar_plano_espacio(

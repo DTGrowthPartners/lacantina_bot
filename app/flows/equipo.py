@@ -32,6 +32,7 @@ from app.db.models import AlertaFabio, Cliente, Conversacion
 from app.db.repos import get_or_create_cliente, guardar_conversacion
 from app.equipo.directorio import Miembro
 from app.logging_setup import log
+from app.menu_media import MENU_URL, imagenes_menu, pide_imagen_menu
 from app.whapi.client import (
     auth_headers, enviar_texto, enviar_imagen_bytes, enviar_video_bytes,
     set_token as set_whapi_token,
@@ -440,6 +441,58 @@ async def procesar_mensaje_equipo(
         "video_bytes": video_bytes,
         "video_mime": video_mime,
     }
+
+    if pide_imagen_menu(instruccion) and not imagen_b64 and msg.tipo == "texto":
+        paginas = imagenes_menu()
+        if paginas:
+            total = len(paginas)
+            for indice, pagina in enumerate(paginas, start=1):
+                await enviar_imagen_bytes(
+                    destino_envio,
+                    pagina.read_bytes(),
+                    mime="image/png",
+                    filename=pagina.name,
+                    caption=f"Carta de La Cantina - pagina {indice}/{total}",
+                )
+                await guardar_conversacion(
+                    session,
+                    cliente_id=cliente_proxy.id,
+                    direccion="outbound",
+                    tipo="imagen",
+                    contenido=f"[carta del menu - pagina {indice}/{total}]",
+                    modelo="directo",
+                    metadata={
+                        "es_equipo": True,
+                        "miembro": miembro.nombre,
+                        "tools": ["enviar_imagenes_menu"],
+                        "directo": True,
+                        "pagina": indice,
+                        "total": total,
+                    },
+                )
+        else:
+            await enviar_texto(destino_envio, MENU_URL)
+            await guardar_conversacion(
+                session,
+                cliente_id=cliente_proxy.id,
+                direccion="outbound",
+                tipo="texto",
+                contenido=MENU_URL,
+                modelo="directo",
+                metadata={
+                    "es_equipo": True,
+                    "miembro": miembro.nombre,
+                    "tools": ["enviar_menu_link"],
+                    "directo": True,
+                    "fallback": True,
+                },
+            )
+        log.info(
+            "flow_equipo.menu_imagenes_directo",
+            miembro=miembro.nombre,
+            paginas=len(paginas),
+        )
+        return
 
     mes_eventos = _mes_pedido_eventos(instruccion)
     if mes_eventos and not imagen_b64 and msg.tipo == "texto":
