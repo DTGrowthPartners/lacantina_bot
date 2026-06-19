@@ -113,7 +113,7 @@ nano .env
 # Rellenar todo. Especialmente:
 # BOT_ENV=production
 # DATABASE_URL apuntando a Postgres local
-# WHAPI_WEBHOOK_URL=https://cantina-bot.dtgrowthpartners.com/webhook
+# WHAPI_WEBHOOK_URL=https://cantinabot.dtgrowthpartners.com/webhook
 # Puerto 8012 (no chocar con bot_asistente que usa 8011)
 chmod 600 .env
 ```
@@ -157,13 +157,13 @@ systemctl --user status cantina-bot.service
 ### 7. Nginx reverse proxy + SSL
 
 ```nginx
-# /etc/nginx/sites-available/cantina-bot.dtgrowthpartners.com
+# /etc/nginx/sites-available/cantinabot.dtgrowthpartners.com
 server {
     listen 443 ssl http2;
-    server_name cantina-bot.dtgrowthpartners.com;
+    server_name cantinabot.dtgrowthpartners.com;
 
-    ssl_certificate /etc/letsencrypt/live/cantina-bot.dtgrowthpartners.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/cantina-bot.dtgrowthpartners.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/cantinabot.dtgrowthpartners.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cantinabot.dtgrowthpartners.com/privkey.pem;
 
     client_max_body_size 30M;
 
@@ -180,14 +180,14 @@ server {
 
 server {
     listen 80;
-    server_name cantina-bot.dtgrowthpartners.com;
+    server_name cantinabot.dtgrowthpartners.com;
     return 301 https://$host$request_uri;
 }
 ```
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/cantina-bot.dtgrowthpartners.com /etc/nginx/sites-enabled/
-sudo certbot --nginx -d cantina-bot.dtgrowthpartners.com
+sudo ln -s /etc/nginx/sites-available/cantinabot.dtgrowthpartners.com /etc/nginx/sites-enabled/
+sudo certbot --nginx -d cantinabot.dtgrowthpartners.com
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
@@ -196,14 +196,14 @@ sudo nginx -t && sudo systemctl reload nginx
 En el panel de whapi.cloud → canal de La Cantina → Settings → Webhook:
 
 ```
-URL: https://cantina-bot.dtgrowthpartners.com/webhook
+URL: https://cantinabot.dtgrowthpartners.com/webhook
 Events: messages.post, statuses.post
 Mode: body
 ```
 
 Test:
 ```bash
-curl https://cantina-bot.dtgrowthpartners.com/health
+curl https://cantinabot.dtgrowthpartners.com/health
 # {"status":"ok",...}
 ```
 

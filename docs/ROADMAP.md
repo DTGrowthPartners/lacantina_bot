@@ -183,7 +183,7 @@ asyncio.run(main())
 ### Paso 8 — Configurar webhook de whapi al servidor
 
 Una vez deployado, en el panel de whapi.cloud (canal de La Cantina):
-- Settings → Webhook URL: `https://cantina-bot.dtgrowthpartners.com/webhook`
+- Settings → Webhook URL: `https://cantinabot.dtgrowthpartners.com/webhook`
 - Events: `messages.post`, `statuses.post`.
 
 ### Paso 9 — Pruebas end-to-end

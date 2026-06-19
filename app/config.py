@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     whapi_token: str = Field(default="")
     whapi_numero_bot: str = "+573008641322"   # número del bot oficial del venue
     whapi_webhook_secret: str = Field(default="")
-    whapi_webhook_url: str = "https://cantina-bot.dtgrowthpartners.com/webhook"
+    whapi_webhook_url: str = "https://cantinabot.dtgrowthpartners.com/webhook"
 
     # ── Identidad ───────────────────────────────────────────────────────────
     identidad_principal_nombre: str = "La Cantina Plus"
