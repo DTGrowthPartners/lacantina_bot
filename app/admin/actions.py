@@ -519,25 +519,37 @@ async def reintentar_respuesta(
         "DELETE FROM intervencion_humana WHERE cliente_id = :cid"
     ), {"cid": cliente_id})
 
-    # 2) Tomar el ÚLTIMO mensaje inbound del cliente (incluso si después hubo
-    #    respuesta humana del admin). El flow carga todo el historial (48h)
-    #    así que el bot ve también lo que tú respondiste manualmente.
+    # 2) Reintentar solo si el ULTIMO turno del chat es un inbound. Si ya existe
+    #    una respuesta posterior, repetir ese inbound reejecutaria una accion
+    #    antigua (por ejemplo, volver a publicar el mismo mensaje en un grupo).
     ultimo_inbound = (await session.execute(sa_text("""
-        SELECT id, contenido, tipo, media_url, whapi_message_id, timestamp
+        SELECT id, direccion, contenido, tipo, media_url, whapi_message_id, timestamp
         FROM conversaciones
-        WHERE cliente_id = :cid AND direccion = 'inbound'
+        WHERE cliente_id = :cid
         ORDER BY id DESC LIMIT 1
     """), {"cid": cliente_id})).first()
-    if not ultimo_inbound:
+    if not ultimo_inbound or ultimo_inbound.direccion != "inbound":
         await session.commit()  # al menos quedó sin pausa
         if _es_ajax(request):
-            return {"ok": True, "msg": "Pausa quitada. Aún no hay mensajes del cliente para que el bot retome."}
+            return {
+                "ok": True,
+                "msg": "No hay un mensaje pendiente: el último inbound ya fue respondido.",
+                "dispatched": False,
+            }
         return RedirectResponse(f"/admin/chats/{cliente_id}?msg=reactivado", status_code=303)
     await session.commit()
 
     # Construir MensajeWhapi mock con la última conversación inbound
     from app.whapi.parser import MensajeWhapi
-    inb_id, inb_contenido, inb_tipo, inb_media, inb_whapi_id, inb_ts = ultimo_inbound
+    (
+        inb_id,
+        _inb_direccion,
+        inb_contenido,
+        inb_tipo,
+        inb_media,
+        inb_whapi_id,
+        inb_ts,
+    ) = ultimo_inbound
     msg = MensajeWhapi(
         id=inb_whapi_id or f"replay_{inb_id}",
         from_number=cliente.numero_whatsapp,
@@ -617,7 +629,11 @@ async def reintentar_respuesta(
         log.warning("admin.reintentar_respuesta", cliente_id=cliente_id, flow="cliente", autor=autor)
 
     if _es_ajax(request):
-        return {"ok": True, "msg": "reintentando — la respuesta llegará en segundos"}
+        return {
+            "ok": True,
+            "msg": "reintentando — la respuesta llegará en segundos",
+            "dispatched": True,
+        }
     return RedirectResponse(f"/admin/chats/{cliente_id}?msg=reintentando", status_code=303)
 
 

@@ -2750,7 +2750,7 @@ __THEME_JS__
         });
         var data = await r.json().catch(function(){ return {ok:false}; });
         if (r.ok && data.ok) {
-          toast('Reintentando — la respuesta llegará en segundos');
+          toast(data.msg || 'Reintentando — la respuesta llegará en segundos');
           // El polling traerá el outbound automáticamente
         } else {
           toast('Error: ' + (data.error || r.status), true);

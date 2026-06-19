@@ -287,16 +287,33 @@ async def procesar_mensaje_equipo(
                 )
             )
         contenido_persistir = msg.texto
-    conv_actual = await guardar_conversacion(
-        session,
-        cliente_id=cliente_proxy.id,
-        direccion="inbound",
-        tipo=msg.tipo,
-        contenido=contenido_persistir,
-        whapi_message_id=msg.id,
-        media_url=msg.media_url,
-        metadata={"es_equipo": True, "miembro": miembro.nombre, "es_grupo": es_grupo},
-    )
+    replay_conv_id = (msg.raw or {}).get("from_conv_id") if (msg.raw or {}).get("replay") else None
+    conv_actual = None
+    if replay_conv_id:
+        conv_actual = (await session.execute(
+            select(Conversacion).where(
+                Conversacion.id == int(replay_conv_id),
+                Conversacion.cliente_id == cliente_proxy.id,
+                Conversacion.direccion == "inbound",
+            )
+        )).scalar_one_or_none()
+        if conv_actual:
+            log.info(
+                "flow_equipo.replay_existente",
+                miembro=miembro.nombre,
+                conversacion_id=conv_actual.id,
+            )
+    if conv_actual is None:
+        conv_actual = await guardar_conversacion(
+            session,
+            cliente_id=cliente_proxy.id,
+            direccion="inbound",
+            tipo=msg.tipo,
+            contenido=contenido_persistir,
+            whapi_message_id=msg.id,
+            media_url=msg.media_url,
+            metadata={"es_equipo": True, "miembro": miembro.nombre, "es_grupo": es_grupo},
+        )
 
     # Descargar imagen si llegó (multimodal vía visión + posible flyer de evento)
     imagen_b64: str | None = None
