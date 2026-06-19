@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Donde el bot publica: comprobantes de cover, escalaciones, resúmenes
     # diarios, etc. Miembros: Fabio, Edgardo, Mariana, Diana, etc.
     equipo_cantina_group_id: str = Field(default="")
+    # Otros grupos donde el bot acepta instrucciones del equipo. Lista CSV.
+    # Las alertas automáticas siguen saliendo al grupo principal de arriba.
+    equipo_cantina_group_ids: str = Field(default="")
 
     # ── Bot HTTP ────────────────────────────────────────────────────────────
     bot_host: str = "127.0.0.1"

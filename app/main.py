@@ -82,6 +82,17 @@ def _track_task(task: "asyncio.Task") -> "asyncio.Task":
     return task
 
 
+def _grupos_equipo_permitidos() -> set[str]:
+    grupos = {settings.equipo_cantina_group_id.strip()}
+    grupos.update(
+        gid.strip()
+        for gid in settings.equipo_cantina_group_ids.split(",")
+        if gid.strip()
+    )
+    grupos.discard("")
+    return grupos
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -863,14 +874,11 @@ async def webhook(
 
         # 🚨 PRIORIDAD 1.5 — Mensajes de GRUPOS de WhatsApp.
         # Por default ignoramos todos los grupos. EXCEPCIÓN: el grupo del
-        # EQUIPO CANTINA (settings.equipo_cantina_group_id) — ahí SÍ procesamos
+        # EQUIPO CANTINA — en los grupos configurados SÍ procesamos
         # mensajes de miembros del equipo y respondemos AL GRUPO (no al
         # chat personal). Es el canal "operativo" del bot.
         if msg.chat_id and msg.chat_id.endswith("@g.us"):
-            es_grupo_equipo = (
-                settings.equipo_cantina_group_id
-                and msg.chat_id == settings.equipo_cantina_group_id
-            )
+            es_grupo_equipo = msg.chat_id in _grupos_equipo_permitidos()
             if es_grupo_equipo:
                 miembro = es_miembro_equipo(msg.from_number)
                 # CASO especial: el operador físico (Fabio/Edgardo) escribió
@@ -944,7 +952,7 @@ async def webhook(
                 _track_task(asyncio.create_task(
                     _procesar_equipo_async(
                         miembro, msg, _identidad_principal(),
-                        responder_a=settings.equipo_cantina_group_id,
+                        responder_a=msg.chat_id,
                     )
                 ))
                 continue

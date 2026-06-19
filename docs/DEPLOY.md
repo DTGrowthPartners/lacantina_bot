@@ -263,5 +263,5 @@ Si la API key de Cantina se filtra, rotar:
 | Bot dice "no pude consultar la agenda" | API key Cantina inválida | Revisar `CANTINA_API_KEY` y `healthcheck()`. |
 | Mismo cliente recibe 3 respuestas | Race condition guard rota | Revisar `flows/conversation.py` — guard al final, debe abortar si llegó nuevo inbound. |
 | El bot responde a Fabio como si fuera cliente | Falta seed `equipo_miembros` | Ejecutar `scripts/seed_staff.py`. |
-| Las alertas no llegan al grupo | `EQUIPO_CANTINA_GROUP_ID` mal en `.env` | Sacar el ID via `GET /groups` de whapi, copiar formato `1203...@g.us`. |
+| El bot ignora un grupo del equipo | ID ausente en `EQUIPO_CANTINA_GROUP_ID(S)` | Usar el principal en `EQUIPO_CANTINA_GROUP_ID` y grupos adicionales separados por coma en `EQUIPO_CANTINA_GROUP_IDS`. |
 | Postgres "out of connections" | pool muy chico | Subir `db_pool_size` en `config.py`. |
