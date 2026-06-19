@@ -66,6 +66,35 @@ _MENU_URL = "https://menu.pirpos.com/menu/5ff4ce6ffe4b9a75e193fcb9"
 _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _FLYERS_DIR = Path(settings.data_dir) / "media" / "flyers"
 
+_INTENTS_ESCALACION_OBLIGATORIA = {"pide_humano", "queja"}
+
+
+def _asegurar_escalacion_humana(
+    outbox: list[dict],
+    *,
+    intent: str,
+    cliente_numero: str,
+    mensaje_cliente: str,
+) -> bool:
+    """Encola el aviso si Claude omitio la tool en un caso humano obligatorio."""
+    if intent not in _INTENTS_ESCALACION_OBLIGATORIA:
+        return False
+    if any(item.get("clase") == "escalacion" for item in outbox):
+        return False
+
+    mensaje = (mensaje_cliente or "").strip() or "[Mensaje sin texto]"
+    outbox.append({
+        "clase": "escalacion",
+        "tipo": intent,
+        "mensaje": (
+            "🙋 *Cliente necesita ayuda del equipo*\n"
+            f"Cliente: {cliente_numero}\n"
+            f"Consulta: {mensaje[:800]}"
+        ),
+        "cliente_numero": cliente_numero,
+    })
+    return True
+
 
 def _limpiar_nombre_reserva(valor: str | None) -> str | None:
     """Normaliza un nombre que el cliente dio expresamente para la reserva."""
@@ -422,6 +451,18 @@ async def procesar_mensaje_inbound(
         extra_system=extra_system,
         persona_file=ident.persona_prompt_file,
     )
+
+    if _asegurar_escalacion_humana(
+        outbox,
+        intent=intent,
+        cliente_numero=cliente_numero,
+        mensaje_cliente=contenido_usuario,
+    ):
+        log.warning(
+            "flow.escalacion_humana_auto_encolada",
+            cliente=cliente_numero,
+            intent=intent,
+        )
 
     texto_final = (respuesta.texto or "").strip()
     if not texto_final:
