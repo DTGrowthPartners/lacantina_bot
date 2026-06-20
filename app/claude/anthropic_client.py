@@ -85,14 +85,27 @@ class AnthropicWithFallback:
 
 
 def _is_fallback_eligible(exc: BaseException) -> bool:
-    """¿Vale la pena reintentar con API directa, o el error también afectaría allá?"""
+    """¿Vale la pena reintentar con API directa, o el error también afectaría allá?
+
+    OJO: primario (proxy Dario) y secundario (key directa) son credenciales
+    DISTINTAS. Por eso un fallo de credencial/cupo del proxy (401/403 o
+    'credit balance too low') SÍ puede resolverse con la key directa.
+    """
     # Conexión: Dario no responde
     if isinstance(exc, anthropic.APIConnectionError):
         return True
-    # Rate / overage / 5xx del proxy o del upstream visto a través del proxy
     if isinstance(exc, anthropic.APIStatusError):
-        return exc.status_code in _FALLBACK_STATUS
-    # 401/403/400 son del cliente — no se arreglan reintentando
+        # Rate / overage / 5xx del proxy o del upstream visto a través del proxy
+        if exc.status_code in _FALLBACK_STATUS:
+            return True
+        # Credencial del proxy inválida → la key directa es otra credencial.
+        if exc.status_code in (401, 403):
+            return True
+        # Cupo del proxy agotado ("credit balance too low" llega como 400) →
+        # la cuenta directa puede tener saldo aparte.
+        if exc.status_code == 400 and "credit balance" in f"{getattr(exc, 'message', '')} {exc}".lower():
+            return True
+    # Otros errores de cliente (400 genérico, etc.) no se arreglan reintentando.
     return False
 
 
