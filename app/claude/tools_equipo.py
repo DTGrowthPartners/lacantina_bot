@@ -424,6 +424,56 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
         },
     },
     {
+        "name": "programar_estado",
+        "description": (
+            "Programa la IMAGEN o VIDEO ADJUNTO para publicarse como estado de WhatsApp "
+            "en una fecha y hora futuras de Colombia. Usala cuando el equipo diga "
+            "'programa este estado', 'subelo mañana a las 7 PM' o similar. La fecha "
+            "debe ser YYYY-MM-DD y la hora debe conservar formato de 12 horas con AM/PM. "
+            "Requiere imagen o video adjunto en el mismo mensaje."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": "Fecha local de Colombia en formato YYYY-MM-DD.",
+                },
+                "hora": {
+                    "type": "string",
+                    "description": "Hora Colombia en formato de 12 horas, por ejemplo 7:30 PM.",
+                },
+                "caption": {
+                    "type": "string",
+                    "description": "Texto opcional que acompañara el estado.",
+                },
+            },
+            "required": ["fecha", "hora"],
+        },
+    },
+    {
+        "name": "listar_estados_programados",
+        "description": (
+            "Lista los proximos estados de WhatsApp pendientes de publicacion. "
+            "Usala cuando pregunten que estados hay programados o a que hora salen."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "cancelar_estado_programado",
+        "description": (
+            "Cancela un estado de WhatsApp programado que aun no se ha publicado. "
+            "Necesita el ID mostrado por listar_estados_programados."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "estado_id": {"type": "integer", "description": "ID del estado programado."},
+            },
+            "required": ["estado_id"],
+        },
+    },
+    {
         "name": "enviar_estado_actual",
         "description": (
             "Envía al chat la IMAGEN o VIDEO del estado/promo vigente de La Cantina "
@@ -460,6 +510,40 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
                 "telefono": {"type": "string", "description": "Número del cliente, +57..."},
             },
             "required": ["telefono"],
+        },
+    },
+    {
+        "name": "listar_grupos_whatsapp",
+        "description": (
+            "Lista los GRUPOS de WhatsApp donde el bot (La Cantina) es miembro, con su "
+            "nombre y número de participantes. Úsalo cuando el equipo te pregunte 'a qué "
+            "grupos puedes escribir', o ANTES de `enviar_mensaje_grupo` si no estás "
+            "seguro del nombre exacto del grupo de destino."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "enviar_mensaje_grupo",
+        "description": (
+            "Envía un mensaje de texto a un GRUPO de WhatsApp donde el bot es miembro. "
+            "SÍ tienes esta herramienta para escribirles a grupos — NUNCA digas que no "
+            "puedes o que toca hacerlo manualmente. Úsalo cuando el equipo te diga "
+            "'anuncia en el grupo X que...', 'manda al grupo Y...', etc. Identifica el "
+            "grupo por su NOMBRE (búsqueda sin distinguir mayúsculas; basta una parte "
+            "del nombre) o por su id `...@g.us` si lo tienes. Si el nombre coincide con "
+            "varios grupos o con ninguno, la herramienta te devolverá la lista para que "
+            "confirmes. Redacta el mensaje en primera persona como La Cantina."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "grupo": {
+                    "type": "string",
+                    "description": "Nombre del grupo (o parte) o su id '...@g.us'.",
+                },
+                "mensaje": {"type": "string", "description": "Texto a enviar al grupo"},
+            },
+            "required": ["grupo", "mensaje"],
         },
     },
 ]
@@ -672,6 +756,100 @@ async def handler_avisar_cliente(args: dict, ctx: dict) -> dict:
     return {"ok": True, "enviado_a": numero}
 
 
+def _nombre_grupo(g: dict) -> str:
+    return (g.get("name") or g.get("subject") or "").strip()
+
+
+def _participantes_grupo(g: dict) -> int:
+    participantes = g.get("participants")
+    if isinstance(participantes, list):
+        return len(participantes)
+    if isinstance(participantes, int):
+        return participantes
+    return 0
+
+
+async def handler_listar_grupos_whatsapp(args: dict, ctx: dict) -> dict:
+    """Lista los grupos de WhatsApp donde esta el canal del bot."""
+    from app.whapi.client import listar_grupos
+
+    try:
+        grupos = await listar_grupos(count=100)
+    except Exception as exc:
+        log.warning("tools_equipo.listar_grupos.fail", error=str(exc))
+        return {"ok": False, "error": f"no se pudieron leer los grupos: {str(exc)[:160]}"}
+    items = [
+        {
+            "id": grupo.get("id"),
+            "nombre": _nombre_grupo(grupo) or "(sin nombre)",
+            "participantes": _participantes_grupo(grupo),
+        }
+        for grupo in grupos
+    ]
+    items.sort(key=lambda item: (-item["participantes"], item["nombre"].lower()))
+    return {"ok": True, "total": len(items), "grupos": items}
+
+
+async def handler_enviar_mensaje_grupo(args: dict, ctx: dict) -> dict:
+    """Envia un texto a un grupo de WhatsApp resolviendo por nombre o id."""
+    grupo_ref = (args.get("grupo") or "").strip()
+    mensaje = (args.get("mensaje") or "").strip()
+    if not grupo_ref or not mensaje:
+        return {"ok": False, "error": "grupo y mensaje son requeridos"}
+
+    from app.whapi.client import enviar_texto, listar_grupos
+
+    if grupo_ref.endswith("@g.us"):
+        gid, nombre = grupo_ref, grupo_ref
+    else:
+        try:
+            grupos = await listar_grupos(count=100)
+        except Exception as exc:
+            log.warning("tools_equipo.enviar_grupo.listar_fail", error=str(exc))
+            return {"ok": False, "error": f"no se pudieron leer los grupos: {str(exc)[:160]}"}
+        ref = grupo_ref.lower()
+        exactos = [grupo for grupo in grupos if _nombre_grupo(grupo).lower() == ref]
+        parciales = [grupo for grupo in grupos if ref in _nombre_grupo(grupo).lower()]
+        candidatos = exactos or parciales
+        if not candidatos:
+            disponibles = sorted(
+                (_nombre_grupo(grupo) or "(sin nombre)" for grupo in grupos), key=str.lower
+            )
+            return {
+                "ok": False,
+                "error": f"No encontré ningún grupo que coincida con '{grupo_ref}'.",
+                "grupos_disponibles": disponibles,
+            }
+        if len(candidatos) > 1:
+            return {
+                "ok": False,
+                "error": (
+                    f"'{grupo_ref}' coincide con {len(candidatos)} grupos. "
+                    "Pídele al equipo que confirme cuál."
+                ),
+                "coincidencias": [
+                    _nombre_grupo(grupo) or "(sin nombre)" for grupo in candidatos
+                ],
+            }
+        grupo = candidatos[0]
+        gid, nombre = grupo.get("id"), _nombre_grupo(grupo) or "(sin nombre)"
+
+    if not gid:
+        return {"ok": False, "error": "el grupo no tiene id válido"}
+    try:
+        await enviar_texto(gid, mensaje)
+    except Exception as exc:
+        log.warning("tools_equipo.enviar_grupo.fail", grupo=gid, error=str(exc))
+        return {"ok": False, "error": f"no se pudo enviar al grupo: {str(exc)[:160]}"}
+    log.info(
+        "tools_equipo.enviar_grupo",
+        grupo=gid,
+        nombre=nombre,
+        por=ctx.get("miembro_nombre"),
+    )
+    return {"ok": True, "enviado_a_grupo": nombre, "group_id": gid}
+
+
 async def handler_crear_difusion_evento(args: dict, ctx: dict) -> dict:
     """Crea y opcionalmente inicia una difusión desde el chat del equipo."""
     if (ctx.get("rol") or "").lower() == "cliente":
@@ -813,6 +991,104 @@ async def handler_publicar_estado(args: dict, ctx: dict) -> dict:
     log.info("tools_equipo.publicar_estado", por=ctx.get("miembro_nombre"), tipo=tipo)
     return {"ok": True, "nota": f"Estado ({tipo}) publicado en WhatsApp y guardado. Ahora el "
                                 "bot puede reenviárselo a los clientes que pregunten por la promo/estado."}
+
+
+async def handler_programar_estado(args: dict, ctx: dict) -> dict:
+    """Guarda un estado adjunto para publicarlo una sola vez en hora Colombia."""
+    if (ctx.get("rol") or "").lower() == "cliente":
+        return {"ok": False, "error": "Solo el equipo puede programar estados."}
+    imagen_bytes = ctx.get("imagen_bytes")
+    video_bytes = ctx.get("video_bytes")
+    if not imagen_bytes and not video_bytes:
+        return {
+            "ok": False,
+            "error": "Adjunta la imagen o el video que quieres programar en el mismo mensaje.",
+        }
+
+    from app import estados_programados
+
+    try:
+        programado = estados_programados.parsear_fecha_hora_colombia(
+            str(args.get("fecha") or ""),
+            str(args.get("hora") or ""),
+        )
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    if video_bytes:
+        data = video_bytes
+        mime = ctx.get("video_mime") or "video/mp4"
+        tipo = "video"
+    else:
+        data = imagen_bytes
+        mime = ctx.get("imagen_mime") or "image/jpeg"
+        tipo = "imagen"
+    caption = (args.get("caption") or "").strip() or None
+    estado_id = await estados_programados.crear(
+        ctx["session"],
+        media_bytes=data,
+        media_mime=mime,
+        tipo=tipo,
+        caption=caption,
+        programado_para=programado,
+        creado_por=ctx.get("miembro_nombre"),
+    )
+    log.info(
+        "tools_equipo.programar_estado",
+        estado_id=estado_id,
+        por=ctx.get("miembro_nombre"),
+        programado_para=programado.isoformat(),
+    )
+    return {
+        "ok": True,
+        "estado_id": estado_id,
+        "tipo": tipo,
+        "programado_para": estados_programados.formatear_hora_colombia(programado),
+        "nota": "Confirma brevemente el ID, la fecha y la hora Colombia.",
+    }
+
+
+async def handler_listar_estados_programados(args: dict, ctx: dict) -> dict:
+    if (ctx.get("rol") or "").lower() == "cliente":
+        return {"ok": False, "error": "Solo el equipo puede ver estados programados."}
+    from app import estados_programados
+
+    items = await estados_programados.listar(ctx["session"])
+    return {
+        "ok": True,
+        "total": len(items),
+        "estados": [
+            {
+                "id": item["id"],
+                "tipo": item["tipo"],
+                "caption": item["caption"],
+                "estado": item["estado"],
+                "programado_para": estados_programados.formatear_hora_colombia(
+                    item["programado_para"]
+                ),
+            }
+            for item in items
+        ],
+        "nota": "Si no hay estados, dilo directamente. No inventes programaciones.",
+    }
+
+
+async def handler_cancelar_estado_programado(args: dict, ctx: dict) -> dict:
+    if (ctx.get("rol") or "").lower() == "cliente":
+        return {"ok": False, "error": "Solo el equipo puede cancelar estados programados."}
+    from app import estados_programados
+
+    estado_id = int(args.get("estado_id") or 0)
+    if estado_id <= 0:
+        return {"ok": False, "error": "Indica un ID de estado valido."}
+    cancelado = await estados_programados.cancelar(ctx["session"], estado_id)
+    if not cancelado:
+        return {
+            "ok": False,
+            "error": "No encontre ese estado pendiente; pudo publicarse o cancelarse antes.",
+        }
+    log.info("tools_equipo.cancelar_estado_programado", estado_id=estado_id)
+    return {"ok": True, "estado_id": estado_id, "nota": "Estado programado cancelado."}
 
 
 async def handler_enviar_estado_actual(args: dict, ctx: dict) -> dict:
@@ -1019,9 +1295,14 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "guardar_flyer_evento": handler_guardar_flyer_evento,
     "borrar_evento": handler_borrar_evento,
     "avisar_cliente": handler_avisar_cliente,
+    "listar_grupos_whatsapp": handler_listar_grupos_whatsapp,
+    "enviar_mensaje_grupo": handler_enviar_mensaje_grupo,
     "crear_difusion_evento": handler_crear_difusion_evento,
     "reenviar_comprobante_cliente": handler_reenviar_comprobante_cliente,
     "publicar_estado": handler_publicar_estado,
+    "programar_estado": handler_programar_estado,
+    "listar_estados_programados": handler_listar_estados_programados,
+    "cancelar_estado_programado": handler_cancelar_estado_programado,
     "enviar_estado_actual": handler_enviar_estado_actual,
     "borrar_ultimo_estado": handler_borrar_ultimo_estado,
 }

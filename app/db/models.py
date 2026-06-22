@@ -285,6 +285,28 @@ class TareaProgramada(Base):
         return f"{self.nombre} ({self.accion})"
 
 
+class EstadoProgramado(Base):
+    """Estado de WhatsApp de una sola ejecucion."""
+    __tablename__ = "estados_programados"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(10))
+    media_path: Mapped[str] = mapped_column(Text)
+    media_mime: Mapped[str] = mapped_column(String(100))
+    caption: Mapped[str | None] = mapped_column(Text)
+    programado_para: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    proximo_intento: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente")
+    intentos: Mapped[int] = mapped_column(Integer, default=0)
+    whapi_message_id: Mapped[str | None] = mapped_column(String(120))
+    error: Mapped[str | None] = mapped_column(Text)
+    creado_por: Mapped[str | None] = mapped_column(String(100))
+    publicado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Difusion(Base):
     """Campaña de difusión WhatsApp con destinatarios congelados."""
     __tablename__ = "difusiones"

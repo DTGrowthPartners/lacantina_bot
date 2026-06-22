@@ -158,6 +158,14 @@ async def _loop() -> None:
 
 
 async def _tick() -> None:
+    # Estados de WhatsApp de una sola ejecucion comparten el heartbeat de 60s,
+    # pero no son cron recurrente. Se reclaman con SKIP LOCKED en su modulo.
+    try:
+        from app.estados_programados import procesar_vencidos
+        await procesar_vencidos(limite=5)
+    except Exception:
+        log.exception("scheduler.estados_programados_fail")
+
     async with async_session_factory() as s:
         rows = (await s.execute(sa_text("""
             SELECT id, nombre, cron, zona_horaria, accion, parametros
