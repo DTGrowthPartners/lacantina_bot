@@ -49,17 +49,65 @@ def _validar_nombre_reserva(args: dict, ctx: dict) -> dict | None:
     """Impide usar el pushname de WhatsApp o un nombre inferido por el modelo."""
     confirmado = _normalizar_nombre(ctx.get("nombre_reserva_confirmado"))
     if not confirmado:
+        log.warning(
+            "tools.reserva.nombre_no_confirmado",
+            cliente=ctx.get("cliente_numero"),
+        )
         return {
             "ok": False,
             "falta_nombre_confirmado": True,
             "error": (
                 "Antes de reservar debes preguntarle al cliente exactamente "
                 "\"¿A nombre de quién hago la reserva?\" y esperar su respuesta. "
-                "No uses el nombre del perfil de WhatsApp."
+                "No uses el nombre del perfil de WhatsApp. No vuelvas a intentar "
+                "crear la reserva en este turno."
             ),
         }
     args["nombre_cliente"] = confirmado
     return None
+
+
+def _clave_intento_reserva(tipo: str, payload: dict) -> tuple:
+    def congelar(valor):
+        if isinstance(valor, list):
+            return tuple(valor)
+        if isinstance(valor, dict):
+            return tuple(sorted((k, congelar(v)) for k, v in valor.items()))
+        return valor
+
+    return tipo, tuple(sorted((k, congelar(v)) for k, v in payload.items()))
+
+
+def _resultado_intento_previo(tipo: str, payload: dict, ctx: dict) -> dict | None:
+    cache = ctx.setdefault("_intentos_reserva", {})
+    anterior = cache.get(_clave_intento_reserva(tipo, payload))
+    if anterior is None:
+        return None
+    log.warning(
+        "tools.reserva.reintento_omitido",
+        tipo=tipo,
+        cliente=ctx.get("cliente_numero"),
+    )
+    resultado = dict(anterior)
+    resultado["reintento_omitido"] = True
+    resultado["instruccion"] = (
+        "Este mismo intento ya se ejecutó en este turno. No vuelvas a llamar "
+        "la tool; responde usando este resultado."
+    )
+    return resultado
+
+
+def _guardar_resultado_reserva(tipo: str, payload: dict, ctx: dict, res: dict) -> dict:
+    ctx.setdefault("_intentos_reserva", {})[
+        _clave_intento_reserva(tipo, payload)
+    ] = dict(res)
+    log.info(
+        "tools.reserva.resultado",
+        tipo=tipo,
+        ok=bool(res.get("ok")),
+        error=str(res.get("error") or "")[:160],
+    )
+    return res
 
 
 def _formatear_cop(valor) -> str:
@@ -508,7 +556,11 @@ async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
         "num_personas": args.get("num_personas"),
         "notas": args.get("notas"),
     }.items() if v is not None}
+    previo = _resultado_intento_previo("simple", payload, ctx)
+    if previo is not None:
+        return previo
     res = await cantina_api.crear_reserva(payload)
+    res = _guardar_resultado_reserva("simple", payload, ctx, res)
     if res.get("ok"):
         outbox = ctx.get("outbox")
         if isinstance(outbox, list):
@@ -538,7 +590,11 @@ async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
         "num_personas": args.get("num_personas"),
         "notas": args.get("notas"),
     }.items() if v is not None}
+    previo = _resultado_intento_previo("grupo", payload, ctx)
+    if previo is not None:
+        return previo
     res = await cantina_api.crear_reserva_grupo(payload)
+    res = _guardar_resultado_reserva("grupo", payload, ctx, res)
     if isinstance(res, dict) and res.get("ok"):
         outbox = ctx.get("outbox")
         if isinstance(outbox, list):
@@ -568,7 +624,11 @@ async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
         "num_personas": args.get("num_personas"),
         "notas": args.get("notas"),
     }.items() if v is not None}
+    previo = _resultado_intento_previo("sala", payload, ctx)
+    if previo is not None:
+        return previo
     res = await cantina_api.crear_reserva_sala(payload)
+    res = _guardar_resultado_reserva("sala", payload, ctx, res)
     if isinstance(res, dict) and res.get("ok"):
         outbox = ctx.get("outbox")
         if isinstance(outbox, list):

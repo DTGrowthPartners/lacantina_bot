@@ -41,6 +41,67 @@ class NombreReservaTests(unittest.TestCase):
 
         self.assertEqual(nombre, "Carlos Pérez")
 
+    def test_conserva_nombre_despues_de_confirmar(self):
+        historial = [
+            SimpleNamespace(
+                direccion="inbound",
+                contenido="Opción uno, unir 2 mesas, a nombre de Ernesto Portela.",
+            ),
+            SimpleNamespace(
+                direccion="outbound",
+                contenido=(
+                    "Te reservo las mesas 9 y 10 a nombre de Ernesto Portela. "
+                    "¿Confirmo?"
+                ),
+            ),
+            SimpleNamespace(direccion="inbound", contenido="Correcto"),
+        ]
+
+        nombre = _nombre_reserva_explicito("Correcto", historial)
+
+        self.assertEqual(nombre, "Ernesto Portela")
+
+    def test_conserva_respuesta_simple_en_el_siguiente_turno(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="David Arriola"),
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿Me confirmas exactamente cómo quieres que quede la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="David Arriola está bien"),
+        ]
+
+        nombre = _nombre_reserva_explicito("David Arriola está bien", historial)
+
+        self.assertEqual(nombre, "David Arriola")
+
+    def test_no_reutiliza_nombre_de_reserva_ya_cerrada(self):
+        historial = [
+            SimpleNamespace(
+                direccion="inbound",
+                contenido="La reserva va a nombre de Carlos Pérez",
+            ),
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="Tu reserva quedó confirmada. ¡Te esperamos!",
+            ),
+            SimpleNamespace(
+                direccion="inbound",
+                contenido="Quiero reservar otra mesa para mañana",
+            ),
+        ]
+
+        nombre = _nombre_reserva_explicito(
+            "Quiero reservar otra mesa para mañana",
+            historial,
+        )
+
+        self.assertIsNone(nombre)
+
 
 class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_bloquea_reserva_si_solo_hay_nombre_inferido(self):
@@ -129,6 +190,41 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("*Estado:* confirmada", mensaje)
         self.assertIn("*Cover:* pendiente · $250.000", mensaje)
         self.assertIn("*Notas:* Cumpleaños", mensaje)
+
+    async def test_no_repite_la_misma_creacion_en_un_turno(self):
+        ctx = {
+            "cliente_numero": "+573206655564",
+            "nombre_reserva_confirmado": "Ernesto Portela",
+            "outbox": [],
+        }
+        args = {
+            "fecha": "2026-06-23",
+            "mesa_numeros": [9, 10],
+            "nombre_cliente": "Ernesto Portela",
+            "num_personas": 8,
+        }
+        respuesta = {"ok": True, "grupo_id": 87, "mesas": [9, 10]}
+
+        with (
+            patch.object(
+                tools.cantina_api,
+                "listar_reservas",
+                new=AsyncMock(return_value={"ok": True, "reservas": []}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "crear_reserva_grupo",
+                new=AsyncMock(return_value=respuesta),
+            ) as crear,
+        ):
+            primero = await tools.handler_crear_reserva_grupo(dict(args), ctx)
+            segundo = await tools.handler_crear_reserva_grupo(dict(args), ctx)
+
+        self.assertTrue(primero["ok"])
+        self.assertTrue(segundo["ok"])
+        self.assertTrue(segundo["reintento_omitido"])
+        crear.assert_awaited_once()
+        self.assertEqual(len(ctx["outbox"]), 1)
 
 
 if __name__ == "__main__":

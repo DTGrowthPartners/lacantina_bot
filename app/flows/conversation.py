@@ -100,7 +100,8 @@ def _limpiar_nombre_reserva(valor: str | None) -> str | None:
     """Normaliza un nombre que el cliente dio expresamente para la reserva."""
     nombre = re.sub(r"\s+", " ", (valor or "")).strip(" \t\r\n.,;:!?\"'")
     nombre = re.sub(
-        r"\s+(?:por favor|gracias|porfa|por favor gracias)$",
+        r"\s+(?:por favor|gracias|porfa|por favor gracias|est[aá] bien|"
+        r"est[aá] correcto|as[ií] est[aá] bien)$",
         "",
         nombre,
         flags=re.IGNORECASE,
@@ -114,35 +115,96 @@ def _limpiar_nombre_reserva(valor: str | None) -> str | None:
     return nombre
 
 
-def _nombre_reserva_explicito(mensaje_actual: str, historial_db: list) -> str | None:
-    """Obtiene el nombre solo si el cliente lo escribió como nombre de reserva."""
-    texto = (mensaje_actual or "").strip()
+def _nombre_marcado_en_texto(texto: str | None) -> str | None:
+    """Extrae un nombre acompañado de una indicación inequívoca de reserva."""
     patrones = (
         r"(?:^|\b)a nombre de\s+(.+)$",
         r"(?:^|\b)mi nombre es\s+(.+)$",
-        r"(?:^|\b)la reserva (?:es|va|ser[ií]a|quedar[ií]a) (?:a nombre de|para)\s+(.+)$",
+        r"(?:^|\b)la reserva (?:es|va|ser[ií]a|quedar[ií]a) "
+        r"(?:a nombre de|para)\s+(.+)$",
     )
     for patron in patrones:
-        coincidencia = re.search(patron, texto, flags=re.IGNORECASE)
+        coincidencia = re.search(patron, texto or "", flags=re.IGNORECASE)
         if coincidencia:
             return _limpiar_nombre_reserva(coincidencia.group(1))
+    return None
+
+
+def _pregunta_nombre_reserva(texto: str | None) -> bool:
+    return bool(re.search(
+        r"a nombre de qui[eé]n|qu[eé] nombre (?:pongo|coloco)|"
+        r"nombre para la reserva|c[oó]mo quieres que quede (?:el nombre|la reserva)|"
+        r"confirma(?:s)? (?:exactamente )?c[oó]mo quieres que quede",
+        texto or "",
+        flags=re.IGNORECASE,
+    ))
+
+
+def _cierra_contexto_reserva(texto: str | None) -> bool:
+    """Evita heredar el nombre de una reserva anterior ya terminada/escalada."""
+    valor = texto or ""
+    if not re.search(r"\breserva\b|\bmesa(?:s)?\b", valor, flags=re.IGNORECASE):
+        return False
+    return bool(re.search(
+        r"confirmad[ao]|reservad[ao]|te confirmamos|le avis[eé] al equipo|"
+        r"pas[eé] el dato al equipo|te contactar[aá]n para confirm",
+        valor,
+        flags=re.IGNORECASE,
+    ))
+
+
+def _nombre_reserva_explicito(mensaje_actual: str, historial_db: list) -> str | None:
+    """Obtiene el nombre expresado dentro de la conversación de reserva activa."""
+    texto = (mensaje_actual or "").strip()
+    nombre_actual = _nombre_marcado_en_texto(texto)
+    if nombre_actual:
+        return nombre_actual
 
     anterior = next(
         (
-            h for h in reversed(historial_db[:-1])
+            h for h in reversed(historial_db)
             if getattr(h, "direccion", None) in ("outbound", "humano")
             and getattr(h, "contenido", None)
         ),
         None,
     )
     pregunta = getattr(anterior, "contenido", "") if anterior else ""
-    pregunto_nombre = re.search(
-        r"a nombre de qui[eé]n|qu[eé] nombre (?:pongo|coloco)|nombre para la reserva",
-        pregunta,
-        flags=re.IGNORECASE,
-    )
-    if pregunto_nombre and "\n" not in texto and len(texto.split()) <= 8:
+    if _pregunta_nombre_reserva(pregunta) and "\n" not in texto and len(texto.split()) <= 8:
         return _limpiar_nombre_reserva(texto)
+
+    # El cliente puede dar el nombre y luego responder "Correcto" a una
+    # confirmación. Recuperamos el último nombre explícito de ESTE trámite, no
+    # del perfil de WhatsApp ni de una reserva anterior ya cerrada.
+    historial = list(historial_db)
+    for indice in range(len(historial) - 1, -1, -1):
+        mensaje = historial[indice]
+        direccion = getattr(mensaje, "direccion", None)
+        contenido = getattr(mensaje, "contenido", None) or ""
+
+        if direccion in ("outbound", "humano") and _cierra_contexto_reserva(contenido):
+            break
+        if direccion != "inbound":
+            continue
+
+        nombre = _nombre_marcado_en_texto(contenido)
+        if nombre:
+            return nombre
+
+        previo = next(
+            (
+                historial[j]
+                for j in range(indice - 1, -1, -1)
+                if getattr(historial[j], "direccion", None) in ("outbound", "humano")
+                and getattr(historial[j], "contenido", None)
+            ),
+            None,
+        )
+        if previo and _pregunta_nombre_reserva(getattr(previo, "contenido", "")):
+            candidato = contenido.strip()
+            if "\n" not in candidato and len(candidato.split()) <= 8:
+                nombre = _limpiar_nombre_reserva(candidato)
+                if nombre:
+                    return nombre
     return None
 
 
