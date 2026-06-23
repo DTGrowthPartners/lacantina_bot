@@ -178,6 +178,22 @@ def _formatear_alerta_reserva(tipo: str, args: dict, res: dict, telefono: str) -
     return "\n".join(str(linea) for linea in lineas)
 
 
+def _formatear_alerta_cambio_mesa(anterior: dict, nueva: dict, telefono: str) -> str:
+    return "\n".join([
+        "🔄 *Reserva modificada — cambio de mesa*",
+        "",
+        f"👤 *A nombre de:* {nueva.get('nombre_cliente') or anterior.get('nombre_cliente')}",
+        f"📱 *Teléfono:* {telefono}",
+        f"📅 *Fecha:* {nueva.get('fecha') or anterior.get('fecha')}",
+        f"👥 *Personas:* {nueva.get('num_personas') or anterior.get('num_personas')}",
+        f"↩️ *Mesa anterior:* {anterior.get('mesa_numero')}",
+        f"🪑 *Mesa nueva:* {nueva.get('mesa_numero')}",
+        f"🧾 *ID anterior:* {anterior.get('id')} · cancelada",
+        f"🧾 *ID actual:* {nueva.get('id')}",
+        f"✅ *Estado:* {nueva.get('estado') or 'confirmada'}",
+    ])
+
+
 async def _cliente_ya_reservo(fecha: str | None, telefono: str | None) -> list | None:
     """Mesas que el cliente (por teléfono) YA tiene reservadas esa fecha, o None.
 
@@ -307,6 +323,28 @@ TOOL_DEFINITIONS: list[dict] = [
         },
     },
     {
+        "name": "cambiar_mesa_reserva_cliente",
+        "description": (
+            "Cambia una reserva SIMPLE activa del propio cliente a otra mesa. "
+            "Es la ÚNICA tool permitida para cambios de mesa: NUNCA combines "
+            "cancelar_reserva_cliente + crear_reserva. Conserva automáticamente "
+            "nombre, teléfono y personas; no vuelvas a preguntarlos. Es idempotente: "
+            "si ya quedó en la mesa solicitada no crea ni notifica otra reserva."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {"type": "string", "description": "YYYY-MM-DD"},
+                "mesa_nueva": {"type": "integer", "description": "Número de la mesa destino"},
+                "reserva_id": {
+                    "type": "integer",
+                    "description": "Opcional; no se lo pidas al cliente.",
+                },
+            },
+            "required": ["fecha", "mesa_nueva"],
+        },
+    },
+    {
         "name": "consultar_reserva_cliente",
         "description": (
             "Busca y confirma las reservas del propio cliente usando automáticamente "
@@ -345,7 +383,8 @@ TOOL_DEFINITIONS: list[dict] = [
         "description": (
             "Cancela una reserva activa del propio cliente. Úsala cuando responda "
             "'Cancelar' a un recordatorio o pida cancelar. Si tiene varias reservas "
-            "y no indicó fecha, la tool pedirá aclarar únicamente la fecha."
+            "y no indicó fecha, la tool pedirá aclarar únicamente la fecha. NUNCA la "
+            "uses para cambiar de mesa; usa cambiar_mesa_reserva_cliente."
         ),
         "input_schema": {
             "type": "object",
@@ -678,6 +717,136 @@ async def handler_consultar_reserva_cliente(args: dict, ctx: dict) -> dict:
     return res
 
 
+async def handler_cambiar_mesa_reserva_cliente(args: dict, ctx: dict) -> dict:
+    """Cambia mesa sin dejar al cliente sin reserva y tolera reintentos."""
+    telefono = ctx.get("cliente_numero")
+    fecha = args.get("fecha")
+    mesa_nueva = args.get("mesa_nueva")
+    consulta = await cantina_api.reservas_cliente(telefono)
+    if not (isinstance(consulta, dict) and consulta.get("ok", True)):
+        return consulta
+
+    reservas = [
+        reserva for reserva in (consulta.get("reservas") or [])
+        if reserva.get("fecha") == fecha
+    ]
+    if args.get("reserva_id"):
+        reservas = [r for r in reservas if r.get("id") == args["reserva_id"]]
+    if not reservas:
+        return {
+            "ok": False,
+            "error": "No encontré una reserva activa tuya para esa fecha.",
+        }
+    if len(reservas) > 1:
+        return {
+            "ok": False,
+            "requiere_aclaracion": True,
+            "reservas": reservas,
+            "error": (
+                "Hay varias reservas activas para esa fecha. No cambies ni canceles "
+                "ninguna: pregunta cuál mesa actual quiere mover."
+            ),
+        }
+
+    anterior = reservas[0]
+    if anterior.get("tipo_reserva") != "mesa" or anterior.get("grupo_id"):
+        return {
+            "ok": False,
+            "requiere_equipo": True,
+            "error": "Los cambios de grupos o salas debe hacerlos el equipo.",
+        }
+    if anterior.get("mesa_numero") == mesa_nueva:
+        return {
+            "ok": True,
+            "modificada": False,
+            "ya_estaba_en_mesa": True,
+            "reserva": anterior,
+            "instruccion": (
+                f"La reserva ya está en la mesa {mesa_nueva}. Confírmalo sin crear "
+                "otra reserva ni avisar al equipo nuevamente."
+            ),
+        }
+
+    payload = {
+        "fecha": anterior.get("fecha"),
+        "mesa_id": mesa_nueva,
+        "nombre_cliente": anterior.get("nombre_cliente"),
+        "telefono": telefono,
+        "num_personas": anterior.get("num_personas"),
+    }
+    if anterior.get("notas"):
+        payload["notas"] = anterior["notas"]
+
+    # Crear primero: si la mesa destino ya no está libre, la reserva original
+    # permanece intacta. Solo la cancelamos después de asegurar la nueva.
+    creada = await cantina_api.crear_reserva(payload)
+    if not (isinstance(creada, dict) and creada.get("ok")):
+        resultado = dict(creada) if isinstance(creada, dict) else {"ok": False}
+        resultado["reserva_original_conservada"] = True
+        resultado["instruccion"] = (
+            "No se pudo cambiar la mesa. La reserva original sigue activa; "
+            "díselo al cliente y no intentes cancelar ni crear por separado."
+        )
+        return resultado
+
+    nueva = _extraer_reserva(creada)
+    cancelada = await cantina_api.cancelar_reserva(anterior["id"])
+    if not (isinstance(cancelada, dict) and cancelada.get("ok")):
+        rollback = await cantina_api.cancelar_reserva(nueva.get("id"))
+        if not (isinstance(rollback, dict) and rollback.get("ok")):
+            outbox = ctx.get("outbox")
+            if isinstance(outbox, list):
+                outbox.append({
+                    "clase": "escalacion",
+                    "tipo": "error_sistema",
+                    "cliente_numero": telefono,
+                    "mensaje": (
+                        "⚠️ *Revisar cambio de mesa manualmente*\n"
+                        f"Cliente: {telefono}\n"
+                        f"Reserva anterior: #{anterior.get('id')} mesa {anterior.get('mesa_numero')}\n"
+                        f"Reserva nueva: #{nueva.get('id')} mesa {nueva.get('mesa_numero')}\n"
+                        "Falló la cancelación y también la reversión automática."
+                    ),
+                })
+        return {
+            "ok": False,
+            "cambio_revertido": bool(isinstance(rollback, dict) and rollback.get("ok")),
+            "error": "No se pudo completar el cambio de mesa.",
+            "instruccion": "No confirmes el cambio; indica que se está verificando.",
+        }
+
+    outbox = ctx.get("outbox")
+    if isinstance(outbox, list):
+        outbox.append({
+            "tipo": "reserva_modificada",
+            "mensaje": _formatear_alerta_cambio_mesa(anterior, nueva, telefono),
+            "cliente_numero": telefono,
+        })
+    log.info(
+        "tools.reserva.mesa_cambiada",
+        cliente=telefono,
+        reserva_anterior=anterior.get("id"),
+        reserva_nueva=nueva.get("id"),
+        mesa_anterior=anterior.get("mesa_numero"),
+        mesa_nueva=nueva.get("mesa_numero"),
+    )
+    return {
+        "ok": True,
+        "modificada": True,
+        "reserva_anterior": {
+            "id": anterior.get("id"),
+            "mesa_numero": anterior.get("mesa_numero"),
+            "estado": "cancelada",
+        },
+        "reserva": nueva,
+        "instruccion": (
+            f"Confirma que la reserva fue MODIFICADA de la mesa "
+            f"{anterior.get('mesa_numero')} a la mesa {nueva.get('mesa_numero')}. "
+            "No la presentes como una reserva adicional."
+        ),
+    }
+
+
 async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
     reserva_id = args.get("reserva_id")
     url = args.get("comprobante_url") or ctx.get("incoming_media_url")
@@ -731,6 +900,15 @@ async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
 
 
 async def handler_cancelar_reserva_cliente(args: dict, ctx: dict) -> dict:
+    if ctx.get("intent") == "modificar_reserva":
+        return {
+            "ok": False,
+            "usar_cambio_mesa": True,
+            "error": (
+                "No canceles una reserva para cambiarla de mesa. Usa "
+                "cambiar_mesa_reserva_cliente; conserva nombre, personas y teléfono."
+            ),
+        }
     consulta = await cantina_api.reservas_cliente(ctx.get("cliente_numero"))
     if not (isinstance(consulta, dict) and consulta.get("ok", True)):
         return consulta
@@ -864,6 +1042,7 @@ HANDLERS: dict[str, Handler] = {
     "crear_reserva": handler_crear_reserva,
     "crear_reserva_grupo": handler_crear_reserva_grupo,
     "crear_reserva_sala_privada": handler_crear_reserva_sala,
+    "cambiar_mesa_reserva_cliente": handler_cambiar_mesa_reserva_cliente,
     "consultar_reserva_cliente": handler_consultar_reserva_cliente,
     "cancelar_reserva_cliente": handler_cancelar_reserva_cliente,
     "registrar_comprobante_cover": handler_registrar_comprobante_cover,

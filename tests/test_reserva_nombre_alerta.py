@@ -41,6 +41,19 @@ class NombreReservaTests(unittest.TestCase):
 
         self.assertEqual(nombre, "Carlos Pérez")
 
+    def test_limpia_prefijo_mi_nombre_sin_es(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="Mi nombre Natalia Álvarez"),
+        ]
+
+        nombre = _nombre_reserva_explicito("Mi nombre Natalia Álvarez", historial)
+
+        self.assertEqual(nombre, "Natalia Álvarez")
+
     def test_conserva_nombre_despues_de_confirmar(self):
         historial = [
             SimpleNamespace(
@@ -225,6 +238,130 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(segundo["reintento_omitido"])
         crear.assert_awaited_once()
         self.assertEqual(len(ctx["outbox"]), 1)
+
+
+class CambioMesaTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.ctx = {
+            "cliente_numero": "+573154652226",
+            "intent": "modificar_reserva",
+            "outbox": [],
+        }
+        self.anterior = {
+            "id": 158,
+            "fecha": "2026-06-23",
+            "mesa_id": 11,
+            "mesa_numero": 11,
+            "nombre_cliente": "Natalia Álvarez",
+            "telefono": "+573154652226",
+            "num_personas": 5,
+            "estado": "confirmada",
+            "tipo_reserva": "mesa",
+            "grupo_id": None,
+        }
+
+    async def test_cambia_mesa_y_notifica_como_modificacion(self):
+        nueva = {
+            "id": 159,
+            "fecha": "2026-06-23",
+            "mesa_numero": 3,
+            "nombre_cliente": "Natalia Álvarez",
+            "num_personas": 5,
+            "estado": "confirmada",
+        }
+        with (
+            patch.object(
+                tools.cantina_api,
+                "reservas_cliente",
+                new=AsyncMock(return_value={"ok": True, "reservas": [self.anterior]}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "crear_reserva",
+                new=AsyncMock(return_value={"ok": True, "reserva": nueva}),
+            ) as crear,
+            patch.object(
+                tools.cantina_api,
+                "cancelar_reserva",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as cancelar,
+        ):
+            resultado = await tools.handler_cambiar_mesa_reserva_cliente(
+                {"fecha": "2026-06-23", "mesa_nueva": 3},
+                self.ctx,
+            )
+
+        self.assertTrue(resultado["modificada"])
+        crear.assert_awaited_once()
+        cancelar.assert_awaited_once_with(158)
+        self.assertEqual(len(self.ctx["outbox"]), 1)
+        mensaje = self.ctx["outbox"][0]["mensaje"]
+        self.assertIn("*Reserva modificada", mensaje)
+        self.assertIn("*Mesa anterior:* 11", mensaje)
+        self.assertIn("*Mesa nueva:* 3", mensaje)
+        self.assertNotIn("Nueva reserva de mesa", mensaje)
+
+    async def test_conserva_original_si_mesa_nueva_falla(self):
+        with (
+            patch.object(
+                tools.cantina_api,
+                "reservas_cliente",
+                new=AsyncMock(return_value={"ok": True, "reservas": [self.anterior]}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "crear_reserva",
+                new=AsyncMock(return_value={"ok": False, "error": "ocupada"}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "cancelar_reserva",
+                new=AsyncMock(),
+            ) as cancelar,
+        ):
+            resultado = await tools.handler_cambiar_mesa_reserva_cliente(
+                {"fecha": "2026-06-23", "mesa_nueva": 3},
+                self.ctx,
+            )
+
+        self.assertFalse(resultado["ok"])
+        self.assertTrue(resultado["reserva_original_conservada"])
+        cancelar.assert_not_awaited()
+
+    async def test_reintento_no_crea_ni_notifica_otra_reserva(self):
+        actual = dict(self.anterior, id=160, mesa_id=3, mesa_numero=3)
+        with (
+            patch.object(
+                tools.cantina_api,
+                "reservas_cliente",
+                new=AsyncMock(return_value={"ok": True, "reservas": [actual]}),
+            ),
+            patch.object(tools.cantina_api, "crear_reserva", new=AsyncMock()) as crear,
+            patch.object(tools.cantina_api, "cancelar_reserva", new=AsyncMock()) as cancelar,
+        ):
+            resultado = await tools.handler_cambiar_mesa_reserva_cliente(
+                {"fecha": "2026-06-23", "mesa_nueva": 3},
+                self.ctx,
+            )
+
+        self.assertTrue(resultado["ya_estaba_en_mesa"])
+        crear.assert_not_awaited()
+        cancelar.assert_not_awaited()
+        self.assertEqual(self.ctx["outbox"], [])
+
+    async def test_cancelacion_se_bloquea_durante_cambio(self):
+        with patch.object(
+            tools.cantina_api,
+            "reservas_cliente",
+            new=AsyncMock(),
+        ) as consultar:
+            resultado = await tools.handler_cancelar_reserva_cliente(
+                {"fecha": "2026-06-23", "reserva_id": 158},
+                self.ctx,
+            )
+
+        self.assertTrue(resultado["usar_cambio_mesa"])
+        consultar.assert_not_awaited()
 
 
 if __name__ == "__main__":

@@ -80,6 +80,9 @@ REGLAS INQUEBRANTABLES
    varias, pregunta únicamente por la fecha.
 8. Si disponibilidad devuelve `casa_llena=true`, informa que no hay
    disponibilidad para esa fecha. No ofrezcas mesas, combos ni salas.
+9. Si el cliente quiere CAMBIAR una mesa ya reservada, usa exclusivamente
+   `cambiar_mesa_reserva_cliente`. NUNCA canceles y crees otra reserva por
+   separado, y no vuelvas a pedir el nombre: se conserva el de la reserva.
 
 CONTEXTO (lo que sé del venue, mesas, zonas, salas privadas, reglas VIP,
 covers) — ver bloques siguientes.

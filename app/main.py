@@ -1478,6 +1478,7 @@ async def _drain_outbox(outbox: list[dict]) -> None:
     # tipo del item del outbox → nombre del evento del webhook saliente.
     _EVENTO_WEBHOOK = {
         "reserva_nueva": "reserva.creada",
+        "reserva_modificada": "reserva.modificada",
         "comprobante_cover": "comprobante.recibido",
     }
     for item in outbox:
