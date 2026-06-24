@@ -29,7 +29,6 @@ from app.admin.eventos import router as eventos_router
 from app.admin.contexto import router as contexto_router
 from app.admin.estados import router as estados_router
 from app.admin.automatizaciones import router as automatizaciones_router
-from app.admin.difusiones import router as difusiones_router
 from app.admin.views import ALL_VIEWS
 from app.api_externa import router as api_externa_router
 from app.config import get_settings
@@ -155,7 +154,6 @@ app.include_router(grupos_router)
 app.include_router(etiquetas_router)
 app.include_router(estados_router)
 app.include_router(automatizaciones_router)
-app.include_router(difusiones_router)
 app.include_router(api_externa_router)
 
 # SQLAdmin: CRUD automático sobre todos los modelos

@@ -49,7 +49,6 @@ psql -h 127.0.0.1 -U cantina_user -d cantina_db -f schema.sql
 psql -h 127.0.0.1 -U cantina_user -d cantina_db -f migrations/002_equipo_a_db.sql
 psql -h 127.0.0.1 -U cantina_user -d cantina_db -f migrations/008_etiquetas_contacto.sql
 psql -h 127.0.0.1 -U cantina_user -d cantina_db -f migrations/009_tags_seguimiento.sql
-psql -h 127.0.0.1 -U cantina_user -d cantina_db -f migrations/013_difusiones.sql
 psql -h 127.0.0.1 -U cantina_user -d cantina_db -f migrations/015_estados_programados.sql
 
 # Seed del staff (después de Paso 7)

@@ -348,7 +348,6 @@ def sidebar_html(active: str = "dashboard") -> str:
 
   <div class="nav-group">
     <div class="nav-group-label">Automatización</div>
-    <a class="{cls('difusiones')}" href="/admin/difusiones"><svg class="ico" width="16" height="16"><use href="#i-messages"/></svg> <span>Difusiones</span></a>
     <a class="{cls('automatizaciones')}" href="/admin/automatizaciones"><svg class="ico" width="16" height="16"><use href="#i-cal"/></svg> <span>Tareas programadas</span></a>
     <a class="{cls('estados')}" href="/admin/estados"><svg class="ico" width="16" height="16"><use href="#i-spark"/></svg> <span>Estados WA</span></a>
     <a class="{cls('grupos')}" href="/admin/grupos"><svg class="ico" width="16" height="16"><use href="#i-users"/></svg> <span>Grupos WA</span></a>
