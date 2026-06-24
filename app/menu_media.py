@@ -18,6 +18,15 @@ _MENU_RE = re.compile(
     re.IGNORECASE,
 )
 
+_CONSULTA_MENU_RE = re.compile(
+    r"\b(?:men[uú]|carta|precios?|bebidas?|tragos?|licores?|comida|"
+    r"cervezas?|whisk(?:y|ies)|ron|aguardiente|tequila|vodka|ginebra|"
+    r"brandy|champ(?:a|á)ña|botellas?)\b"
+    r"|\b(?:cu[aá]nto (?:vale|cuesta)|qu[eé] precio tiene|"
+    r"precio (?:de|del)|valor (?:de|del))\b",
+    re.IGNORECASE,
+)
+
 
 def imagenes_menu() -> list[Path]:
     return [p for p in sorted(_MENU_DIR.glob("menu-*.png")) if p.is_file()]
@@ -25,3 +34,8 @@ def imagenes_menu() -> list[Path]:
 
 def pide_imagen_menu(texto: str | None) -> bool:
     return bool(_MENU_RE.search(texto or ""))
+
+
+def pide_menu(texto: str | None) -> bool:
+    """Detecta consultas que deben resolverse con el link del menú digital."""
+    return bool(_CONSULTA_MENU_RE.search(texto or ""))

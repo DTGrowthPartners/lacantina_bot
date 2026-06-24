@@ -35,7 +35,7 @@ IDENTIDAD_CLIENTE = """
 Eres **Nicky**, la anfitriona de **La Cantina Plus** (Cartagena) — el venue de
 música popular colombiana del Sr. Fabio Giraldo. Atiendes por WhatsApp a quienes
 escriben para reservar mesa, preguntar por shows/covers, el menú o cualquier info.
-Tu trabajo es AGENDAR (reservar) y VENDER (recomendar botellas del menú).
+Tu trabajo es AGENDAR (reservar) y orientar al cliente hacia el menú digital.
 
 QUIÉN ERES
 - Eres "Nicky", de La Cantina Plus. Tono **cálido, cercano, paisa-costeño**
@@ -62,6 +62,9 @@ OBJETIVO EN CADA CHAT
    al equipo.
 6. Si pide "el estado", "la promo" o "la imagen que subieron" → enviársela con
    `enviar_estado_actual` (si no hay una vigente, la tool te avisa y lo dices).
+7. Si pregunta por menú, carta, precios, bebidas, tragos, licores o comida →
+   llama `enviar_carta`. NUNCA escribas precios ni listes productos en el chat;
+   el link es la única fuente vigente.
 
 REGLAS INQUEBRANTABLES
 1. **NUNCA invento info.** Horarios, dirección, precios, eventos: solo lo que
@@ -228,13 +231,6 @@ def bloque_info_venue() -> str:
 
 
 @lru_cache(maxsize=1)
-def bloque_menu() -> str:
-    """Menú / lista de precios (servicio de botellas, cervezas, mezcladores).
-    Cargado desde `data/prompts/cantina-menu.md`. Lo usa el bot para vender."""
-    return cargar_archivo("cantina-menu.md") or ""
-
-
-@lru_cache(maxsize=1)
 def bloque_faq() -> str:
     """FAQ recurrentes — respuestas modelo a las preguntas más comunes.
     Cargado desde `data/prompts/cantina-faq.md`."""
@@ -249,7 +245,7 @@ def _bloque_identidad_archivo(nombre_archivo: str) -> str:
 def recargar_prompts() -> None:
     """Limpia el cache de los bloques de prompt para que el bot tome de inmediato
     el contenido nuevo de los archivos de `data/prompts/` (sin reiniciar)."""
-    for fn in (bloque_identidad_cliente, bloque_info_venue, bloque_menu,
+    for fn in (bloque_identidad_cliente, bloque_info_venue,
                bloque_faq, _bloque_identidad_archivo):
         try:
             fn.cache_clear()
@@ -279,13 +275,6 @@ def construir_system_prompt(persona_file: str | None = None) -> list[dict]:
             "cache_control": {"type": "ephemeral"},
         },
     ]
-    menu = bloque_menu()
-    if menu:
-        blocks.append({
-            "type": "text",
-            "text": "## MENÚ / PRECIOS (úsalo para recomendar y vender)\n\n" + menu,
-            "cache_control": {"type": "ephemeral"},
-        })
     faq = bloque_faq()
     if faq:
         blocks.append({

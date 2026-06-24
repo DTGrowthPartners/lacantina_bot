@@ -448,9 +448,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "name": "enviar_carta",
         "description": (
             "Envía al cliente el LINK del menú digital (siempre actualizado). "
-            "Úsalo cuando pregunte por bebidas, tragos, licores, comida, la carta "
-            "o el menú. Acompáñalo con un mensaje breve (puedes mencionar 1-2 "
-            "opciones o invitar a verlo). Llámalo una sola vez por conversación "
+            "Úsalo cuando pregunte por precios, productos, bebidas, tragos, licores, "
+            "comida, la carta o el menú. NUNCA respondas precios ni listes productos: "
+            "invítalo a consultar el link. Llámalo una sola vez por conversación "
             "salvo que lo vuelva a pedir."
         ),
         "input_schema": {"type": "object", "properties": {}},
@@ -994,10 +994,16 @@ async def handler_enviar_como_llegar(args: dict, ctx: dict) -> dict:
 
 
 async def handler_enviar_carta(args: dict, ctx: dict) -> dict:
-    """Marca que hay que enviar la carta/menú en PDF (tras el texto)."""
-    ctx["enviar_carta_pdf"] = True
+    """Marca que hay que enviar el link del menú digital tras el texto."""
+    ctx["enviar_carta_link"] = True
     log.info("tools.enviar_carta", cliente=ctx.get("cliente_numero"))
-    return {"ok": True, "nota": "La carta en PDF se enviará junto con tu respuesta."}
+    return {
+        "ok": True,
+        "nota": (
+            "El link del menú se enviará junto con tu respuesta. No escribas precios "
+            "ni productos; solo invita al cliente a abrirlo."
+        ),
+    }
 
 
 async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:

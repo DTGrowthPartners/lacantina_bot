@@ -36,7 +36,7 @@ from app.config import get_settings
 from app.db.models import Cliente, Conversacion
 from app.db.repos import bot_activo, guardar_conversacion, ultimos_mensajes
 from app.logging_setup import log
-from app.menu_media import MENU_URL, imagenes_menu
+from app.menu_media import MENU_URL, pide_menu
 from app.utils.humanizer import (
     dentro_horario,
     proxima_hora_apertura,
@@ -236,30 +236,8 @@ async def _enviar_flyer_evento(session: AsyncSession, cliente_id: int, cliente_n
 
 
 async def _enviar_link_menu(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
-    """Envia las paginas de la carta como imagen; cae al link si faltan."""
+    """Envía siempre el enlace canónico del menú digital."""
     try:
-        paginas = imagenes_menu()
-        if paginas:
-            total = len(paginas)
-            for indice, pagina in enumerate(paginas, start=1):
-                await enviar_imagen_bytes(
-                    cliente_numero,
-                    pagina.read_bytes(),
-                    mime="image/png",
-                    filename=pagina.name,
-                    caption=f"Carta de La Cantina - pagina {indice}/{total}",
-                )
-                await guardar_conversacion(
-                    session,
-                    cliente_id=cliente_id,
-                    direccion="outbound",
-                    tipo="imagen",
-                    contenido=f"[carta del menu - pagina {indice}/{total}]",
-                    metadata={"media": "menu_image", "pagina": indice, "total": total},
-                )
-            log.info("flow.menu_imagenes.enviadas", cliente=cliente_numero, paginas=total)
-            return
-
         await enviar_texto(cliente_numero, MENU_URL)
         await guardar_conversacion(
             session,
@@ -267,11 +245,11 @@ async def _enviar_link_menu(session: AsyncSession, cliente_id: int, cliente_nume
             direccion="outbound",
             tipo="texto",
             contenido=MENU_URL,
-            metadata={"media": "menu_link", "fallback": True},
+            metadata={"media": "menu_link"},
         )
-        log.warning("flow.menu_imagenes.fallback_link", cliente=cliente_numero)
+        log.info("flow.menu_link.enviado", cliente=cliente_numero)
     except Exception as e:
-        log.warning("flow.menu_imagenes.fail", error=str(e))
+        log.warning("flow.menu_link.fail", error=str(e))
 
 
 async def _enviar_plano_espacio(
@@ -429,6 +407,8 @@ async def procesar_mensaje_inbound(
                 f"Su respuesta: {contenido_usuario}"
             )
 
+    solicitud_menu = pide_menu(msg.texto or contenido_usuario)
+
     # 1. Historial (hasta 30 msgs / 48h)
     historial_db = await ultimos_mensajes(session, cliente_id, n=30, horas_max=48)
     nombre_reserva_confirmado = _nombre_reserva_explicito(contenido_usuario, historial_db)
@@ -519,8 +499,15 @@ async def procesar_mensaje_inbound(
         "incoming_media_bytes": imagen_bytes,
         "incoming_media_mime": imagen_mime or msg.media_mime,
         "nombre_reserva_confirmado": nombre_reserva_confirmado,
+        "enviar_carta_link": solicitud_menu,
     }
     extra_system = await _construir_contexto_cliente(session, cliente_id, cliente_numero)
+    if solicitud_menu:
+        extra_system += (
+            "\n\n## SOLICITUD DE MENÚ DETECTADA\n"
+            "Debes orientar al cliente al link que enviará el sistema. No escribas "
+            "precios ni listes productos, aunque aparezcan en mensajes anteriores."
+        )
     if intent == "consultar_reserva":
         from app.integrations import cantina_api
 
@@ -624,10 +611,10 @@ async def procesar_mensaje_inbound(
         log.exception("flow.enviar_whapi_fail", error=str(e))
         return ctx.get("outbox", [])
 
-    # 6.5 Adjuntos pedidos por el bot (tras el texto): video / carta PDF / flyer del evento.
+    # 6.5 Envíos complementarios pedidos por el bot (tras el texto).
     if ctx.get("enviar_video_como_llegar"):
         await _enviar_video_como_llegar(session, cliente_id, cliente_numero)
-    if ctx.get("enviar_carta_pdf"):
+    if ctx.get("enviar_carta_link"):
         await _enviar_link_menu(session, cliente_id, cliente_numero)
     if ctx.get("enviar_plano_espacio"):
         await _enviar_plano_espacio(
