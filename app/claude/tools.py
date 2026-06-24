@@ -23,6 +23,42 @@ from app.integrations import cantina_api
 from app.logging_setup import log
 
 
+_POLITICA_HORARIO_COVER = (
+    "REGLA OBLIGATORIA: en días de evento el cover se cobra únicamente a quienes "
+    "ingresan desde las 9:00 p. m. en adelante. Quien ingresa antes de las 9:00 "
+    "p. m. no paga cover. Acláralo siempre al cliente cuando menciones el cover."
+)
+
+
+def _anotar_politica_horario_cover(res: dict) -> dict:
+    """Inyecta la política cuando una respuesta de la API contiene cover."""
+    if not isinstance(res, dict):
+        return res
+
+    candidatos = [res]
+    for clave in ("data", "evento", "reserva"):
+        valor = res.get(clave)
+        if isinstance(valor, dict):
+            candidatos.append(valor)
+    data = res.get("data")
+    if isinstance(data, dict) and isinstance(data.get("evento"), dict):
+        candidatos.append(data["evento"])
+    for clave in ("reservas", "eventos"):
+        valores = res.get(clave)
+        if isinstance(valores, list):
+            candidatos.extend(v for v in valores if isinstance(v, dict))
+
+    aplica = bool(res.get("cover")) or any(
+        item.get("tiene_cover") is True
+        or item.get("cover_estado") in {"pendiente", "anticipado", "en_entrada"}
+        or bool(item.get("monto_cover"))
+        for item in candidatos
+    )
+    if aplica:
+        res["politica_horario_cover"] = _POLITICA_HORARIO_COVER
+    return res
+
+
 def _mismo_telefono(a: str | None, b: str | None) -> bool:
     """True si dos teléfonos son el mismo número (compara solo dígitos, últimos 10).
     Se usa para verificar que una reserva pertenece al cliente que pregunta."""
@@ -536,7 +572,7 @@ async def handler_consultar_disponibilidad(args: dict, ctx: dict) -> dict:
                 f"en mesa(s) {ya}. NO ofrezcas más mesas ni digas que están ocupadas: "
                 "confírmale su reserva existente y pregunta si necesita algo más."
             )
-    return res
+    return _anotar_politica_horario_cover(res)
 
 
 async def handler_consultar_evento(args: dict, ctx: dict) -> dict:
@@ -554,7 +590,7 @@ async def handler_consultar_evento(args: dict, ctx: dict) -> dict:
                 res["descripcion"] = d.read_text(encoding="utf-8")
         except Exception:
             pass
-    return res
+    return _anotar_politica_horario_cover(res)
 
 
 async def handler_proximos_eventos(args: dict, ctx: dict) -> dict:
@@ -573,7 +609,11 @@ async def handler_proximos_eventos(args: dict, ctx: dict) -> dict:
         for e in (evs or []) if isinstance(e, dict) and str(e.get("fecha") or "") >= hoy
     ]
     proximos.sort(key=lambda e: str(e.get("fecha") or ""))
-    return {"ok": True, "proximos_eventos": proximos[:10]}
+    return _anotar_politica_horario_cover({
+        "ok": True,
+        "eventos": proximos[:10],
+        "proximos_eventos": proximos[:10],
+    })
 
 
 async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
@@ -599,6 +639,7 @@ async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
     if previo is not None:
         return previo
     res = await cantina_api.crear_reserva(payload)
+    res = _anotar_politica_horario_cover(res)
     res = _guardar_resultado_reserva("simple", payload, ctx, res)
     if res.get("ok"):
         outbox = ctx.get("outbox")
@@ -633,6 +674,7 @@ async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
     if previo is not None:
         return previo
     res = await cantina_api.crear_reserva_grupo(payload)
+    res = _anotar_politica_horario_cover(res)
     res = _guardar_resultado_reserva("grupo", payload, ctx, res)
     if isinstance(res, dict) and res.get("ok"):
         outbox = ctx.get("outbox")
@@ -780,6 +822,7 @@ async def handler_cambiar_mesa_reserva_cliente(args: dict, ctx: dict) -> dict:
     # Crear primero: si la mesa destino ya no está libre, la reserva original
     # permanece intacta. Solo la cancelamos después de asegurar la nueva.
     creada = await cantina_api.crear_reserva(payload)
+    creada = _anotar_politica_horario_cover(creada)
     if not (isinstance(creada, dict) and creada.get("ok")):
         resultado = dict(creada) if isinstance(creada, dict) else {"ok": False}
         resultado["reserva_original_conservada"] = True

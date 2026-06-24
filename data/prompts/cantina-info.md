@@ -119,7 +119,12 @@ contiguas**. Incluso se puede reservar **un pasillo entero**.
 ## Eventos y cover
 
 - ~1 evento al mes con cantante invitado y **cover por persona**.
-- `monto_cover_total = valor_cover × num_personas`.
+- El cover se cobra **únicamente desde las 9:00 p. m. en adelante**. Quien
+  ingresa antes de las 9:00 p. m. no paga cover, incluso en un día de evento.
+- Esta regla depende de la **hora real de ingreso**, no de la hora en que se
+  hizo la reserva. Nunca prometas exención a alguien que piensa llegar después
+  de las 9:00 p. m.
+- Cuando aplica: `monto_cover_total = valor_cover × num_personas`.
 - Pago del cover:
   - **Anticipado** — transferencia, hay `link_pago`.
   - **En la entrada** — paga en puerta.
@@ -143,7 +148,8 @@ contiguas**. Incluso se puede reservar **un pasillo entero**.
    quién va la reserva**. Este nombre debe darlo expresamente el cliente; nunca
    se toma del perfil de WhatsApp.
 2. Llamar `consultar_disponibilidad(fecha, personas)`:
-   - Si hay `evento` → avisar del **cover por persona** y, si es VIP, la `nota_vip`.
+  - Si hay `evento` → avisar del **cover por persona**, aclarar que solo se
+    cobra desde las **9:00 p. m.**, y, si es VIP, la `nota_vip`.
    - Si `requiere_combinar` → ofrecer **unir mesas** (`combo_sugerido`).
    - Si el grupo es grande/exclusivo → ofrecer **sala privada**.
    - Para "muéstrame el mapa / cómo están las mesas / la distribución" → llamar
@@ -155,8 +161,9 @@ contiguas**. Incluso se puede reservar **un pasillo entero**.
      pasillo completo) → `crear_reserva_grupo` indicando **todas las mesas** del
      pasillo/grupo (ver *"Reservas masivas / pasillo completo"*)
    - Sala privada → `crear_reserva_sala_privada`
-4. Confirmar con el `mensaje` que devuelve la API. Si hay cover, indicar pago
-   **anticipado** (`link_pago`) o **en la entrada**.
+4. Confirmar con el `mensaje` que devuelve la API. Si hay cover, recordar que
+   solo se cobra desde las **9:00 p. m.** e indicar pago **anticipado**
+   (`link_pago`) o **en la entrada** cuando corresponda.
 
 ## Notas operativas para el bot
 
