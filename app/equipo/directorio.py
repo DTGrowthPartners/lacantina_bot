@@ -18,6 +18,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from typing import Any
+import re
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -52,9 +53,21 @@ CACHE_TTL_SECONDS = 30
 _cache: dict[str, Any] = {
     "loaded_at": 0.0,
     "miembros": [],
+    "miembros_por_numero": {},
     "numeros_internos": set(),
+    "numeros_internos_norm": set(),
     "clientes_whitelist": {},  # numero -> Miembro(rol='cliente')
+    "clientes_whitelist_norm": {},
 }
+
+
+def _normalizar_numero(numero: str | None) -> str:
+    """Normaliza números guardados a la misma forma que llega desde whapi."""
+    if not numero:
+        return ""
+    base = str(numero).split("@", 1)[0]
+    digitos = re.sub(r"\D", "", base)
+    return f"+{digitos}" if digitos else ""
 
 
 def _cargar_si_caducado() -> None:
@@ -82,8 +95,9 @@ def _cargar_si_caducado() -> None:
         return
 
     miembros: list[Miembro] = []
+    miembros_por_numero: dict[str, Miembro] = {}
     for m in miembros_rows:
-        miembros.append(Miembro(
+        miembro = Miembro(
             nombre=m.nombre,
             numero_whatsapp=m.numero_whatsapp,
             rol=m.rol,
@@ -91,11 +105,16 @@ def _cargar_si_caducado() -> None:
             es_fallback=bool(m.es_fallback),
             activo=bool(m.activo),
             notas=m.notas,
-        ))
+        )
+        miembros.append(miembro)
+        numero_norm = _normalizar_numero(m.numero_whatsapp)
+        if numero_norm:
+            miembros_por_numero[numero_norm] = miembro
 
     clientes: dict[str, Miembro] = {}
+    clientes_norm: dict[str, Miembro] = {}
     for c in clientes_rows:
-        clientes[c.numero_whatsapp] = Miembro(
+        cliente = Miembro(
             nombre=c.nombre or c.empresa or c.numero_whatsapp,
             numero_whatsapp=c.numero_whatsapp,
             rol="cliente",
@@ -104,11 +123,20 @@ def _cargar_si_caducado() -> None:
             activo=True,
             notas=c.empresa,
         )
+        clientes[c.numero_whatsapp] = cliente
+        numero_norm = _normalizar_numero(c.numero_whatsapp)
+        if numero_norm:
+            clientes_norm[numero_norm] = cliente
 
     _cache["loaded_at"] = ahora
     _cache["miembros"] = miembros
+    _cache["miembros_por_numero"] = miembros_por_numero
     _cache["numeros_internos"] = set(internos_rows)
+    _cache["numeros_internos_norm"] = {
+        n for n in (_normalizar_numero(num) for num in internos_rows) if n
+    }
     _cache["clientes_whitelist"] = clientes
+    _cache["clientes_whitelist_norm"] = clientes_norm
     log.debug("equipo.cache.reloaded",
               miembros=len(miembros), numeros_internos=len(internos_rows),
               clientes_whitelist=len(clientes))
@@ -162,7 +190,10 @@ def listar_miembros_equipo() -> list[Miembro]:
 def es_numero_interno(numero: str) -> bool:
     """¿Este número pertenece al equipo interno (no es cliente)?"""
     _cargar_si_caducado()
-    return numero in _cache["numeros_internos"]
+    numero_norm = _normalizar_numero(numero)
+    if numero_norm in _cache["miembros_por_numero"]:
+        return False
+    return numero in _cache["numeros_internos"] or numero_norm in _cache["numeros_internos_norm"]
 
 
 def es_miembro_equipo(numero: str) -> Miembro | None:
@@ -175,10 +206,7 @@ def es_miembro_equipo(numero: str) -> Miembro | None:
     - es_miembro_equipo → Fabio, supervisores — el bot HABLA con ellos
     """
     _cargar_si_caducado()
-    for m in _cache["miembros"]:
-        if m.numero_whatsapp == numero:
-            return m
-    return None
+    return _cache["miembros_por_numero"].get(_normalizar_numero(numero))
 
 
 def whitelist_cliente(numero: str) -> Miembro | None:
@@ -188,7 +216,10 @@ def whitelist_cliente(numero: str) -> Miembro | None:
     Distinto de es_miembro_equipo (equipo interno con acceso total).
     """
     _cargar_si_caducado()
-    return _cache["clientes_whitelist"].get(numero)
+    return (
+        _cache["clientes_whitelist"].get(numero)
+        or _cache["clientes_whitelist_norm"].get(_normalizar_numero(numero))
+    )
 
 
 def fabio_phone() -> str:

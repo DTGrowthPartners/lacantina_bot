@@ -36,7 +36,7 @@ STAFF: list[tuple[str, str, str, str]] = [
     ("+573122708650", "Santiago Giraldo Cantina", "Cantante", "interno"),
     ("+573117681858", "Alejo Palacio", "Cantante/Cajero", "interno"),
     ("+573011062354", "Diana Cantina", "Mesera", "interno"),
-    ("+573017866478", "Jordi", "Guardia", "interno"),
+    ("+573017866478", "Yordi", "Seguridad", "equipo"),
     ("+573215098448", "Mariana Cantina", "Mesera", "interno"),
     ("+573013364137", "Dana", "Mesera", "interno"),
     ("+573244824083", "Brilly Giraldo", "Cantante", "interno"),
@@ -62,6 +62,17 @@ async def main() -> None:
                     ),
                     {"n": nombre, "w": numero, "r": rol,
                      "fb": rol in ("Dueño", "Administrador")},
+                )
+                await s.execute(
+                    text(
+                        """
+                        UPDATE numeros_internos
+                           SET activo = false
+                         WHERE regexp_replace(numero_whatsapp, '\\D', '', 'g')
+                             = regexp_replace(:w, '\\D', '', 'g')
+                        """
+                    ),
+                    {"w": numero},
                 )
                 equipo += 1
             else:
