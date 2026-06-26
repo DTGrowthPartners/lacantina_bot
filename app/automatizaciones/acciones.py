@@ -26,6 +26,11 @@ from app.whapi.client import enviar_texto
 
 settings = get_settings()
 
+REGLA_VALIDEZ_RESERVA = (
+    "Importante: tu reserva tiene validez hasta las 11:00 p. m.; despues de esa "
+    "hora la mesa queda sujeta a disponibilidad."
+)
+
 
 # ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -286,6 +291,7 @@ async def accion_recordatorio_reservas_clientes(
             f"Hola{f' {nombre}' if nombre else ''}. Te recordamos tu reserva "
             f"para {momento}, {fecha}, en {ubicacion} para "
             f"{reserva.get('num_personas', '?')} persona(s).\n\n"
+            f"{REGLA_VALIDEZ_RESERVA}\n\n"
             "Responde *Confirmar* para mantenerla o *Cancelar* si ya no puedes asistir."
         )
         await enviar_texto(numero, mensaje)
