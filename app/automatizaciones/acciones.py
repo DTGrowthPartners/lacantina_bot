@@ -31,6 +31,15 @@ REGLA_VALIDEZ_RESERVA = (
     "hora la mesa queda sujeta a disponibilidad."
 )
 
+_COVER_PAGADO_ANTICIPADO = {
+    "anticipado",
+    "pagado",
+    "pago",
+    "transferido",
+    "transferencia",
+    "comprobante_verificado",
+}
+
 
 # ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -47,6 +56,12 @@ def _hoy(offset_dias: int = 0) -> str:
     """Fecha local (America/Bogota) YYYY-MM-DD, con offset opcional de días."""
     d = (datetime.now(timezone.utc).astimezone(_tz()) + timedelta(days=offset_dias)).date()
     return d.isoformat()
+
+
+def _aplica_regla_validez_reserva(reserva: dict) -> bool:
+    """La regla de las 11 no aplica si la reserva ya esta pagada por anticipado."""
+    estado = str(reserva.get("cover_estado") or "").strip().lower()
+    return estado not in _COVER_PAGADO_ANTICIPADO
 
 
 async def _enviar_a_destino(destino_tipo: str, destino_id: str, mensaje: str) -> dict:
@@ -287,11 +302,16 @@ async def accion_recordatorio_reservas_clientes(
         else:
             ubicacion = reserva.get("sala_nombre") or "tu espacio reservado"
         momento = "mañana" if tipo == "24h" else "hoy"
+        nota_validez = (
+            f"{REGLA_VALIDEZ_RESERVA}\n\n"
+            if _aplica_regla_validez_reserva(reserva)
+            else ""
+        )
         mensaje = (
             f"Hola{f' {nombre}' if nombre else ''}. Te recordamos tu reserva "
             f"para {momento}, {fecha}, en {ubicacion} para "
             f"{reserva.get('num_personas', '?')} persona(s).\n\n"
-            f"{REGLA_VALIDEZ_RESERVA}\n\n"
+            f"{nota_validez}"
             "Responde *Confirmar* para mantenerla o *Cancelar* si ya no puedes asistir."
         )
         await enviar_texto(numero, mensaje)
