@@ -291,32 +291,43 @@ async def _enviar_plano_espacio(
 
 
 async def _enviar_estado_actual(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
-    """Envía al cliente la imagen del estado/promo vigente (tras el texto)."""
+    """Envia al cliente los estados/promos vigentes (tras el texto)."""
     from app import promo_estado
-    estado = promo_estado.cargar_estado()
-    if estado is None:
+
+    estados = await promo_estado.cargar_estados_activos()
+    if not estados:
         log.info("flow.estado_actual.sin_estado", cliente=cliente_numero)
         return
-    path, caption = estado
-    cap = caption or "📸 ¡Esto es lo último de La Cantina Plus! 🎶"
+
+    total = len(estados)
+    enviados = 0
     try:
-        if promo_estado.es_video(path):
-            await enviar_video_bytes(
-                cliente_numero, path.read_bytes(), mime=promo_estado.mime_de(path),
-                filename=path.name, caption=cap,
+        for idx, estado in enumerate(estados, start=1):
+            base_cap = estado.get("caption") or "Esto es lo ultimo de La Cantina Plus"
+            cap = f"Estado {idx}/{total}\n{base_cap}" if total > 1 else base_cap
+            if estado.get("tipo") == "video":
+                await enviar_video_bytes(
+                    cliente_numero, estado["data"], mime=estado["mime"],
+                    filename=estado["filename"], caption=cap,
+                )
+                tipo = "video"
+            else:
+                await enviar_imagen_bytes(
+                    cliente_numero, estado["data"], mime=estado["mime"],
+                    filename=estado["filename"], caption=cap,
+                )
+                tipo = "imagen"
+            enviados += 1
+            await guardar_conversacion(
+                session, cliente_id=cliente_id, direccion="outbound", tipo=tipo,
+                contenido="[estado/promo vigente]", metadata={
+                    "media": "estado_actual",
+                    "estado_idx": idx,
+                    "estado_total": total,
+                    "story_id": estado.get("id"),
+                },
             )
-            tipo = "video"
-        else:
-            await enviar_imagen_bytes(
-                cliente_numero, path.read_bytes(), mime=promo_estado.mime_de(path),
-                filename=path.name, caption=cap,
-            )
-            tipo = "imagen"
-        await guardar_conversacion(
-            session, cliente_id=cliente_id, direccion="outbound", tipo=tipo,
-            contenido="[estado/promo vigente]", metadata={"media": "estado_actual"},
-        )
-        log.info("flow.estado_actual.enviado", cliente=cliente_numero, tipo=tipo)
+        log.info("flow.estado_actual.enviado", cliente=cliente_numero, cantidad=enviados)
     except Exception as e:
         log.warning("flow.estado_actual.fail", error=str(e))
 

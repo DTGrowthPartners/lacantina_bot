@@ -926,7 +926,7 @@ async def handler_cancelar_estado_programado(args: dict, ctx: dict) -> dict:
 async def handler_enviar_estado_actual(args: dict, ctx: dict) -> dict:
     """Marca que hay que enviar la imagen/video del estado vigente al chat del equipo."""
     from app import promo_estado
-    if promo_estado.cargar_estado() is None:
+    if not await promo_estado.cargar_estados_activos(max_estados=1):
         return {"ok": False, "sin_estado": True,
                 "nota": "No hay un estado/promo vigente guardado. Avísale que por ahora no hay una promo publicada."}
     ctx["enviar_estado_actual"] = True

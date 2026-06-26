@@ -1028,7 +1028,7 @@ async def handler_enviar_estado_actual(args: dict, ctx: dict) -> dict:
     """Marca que hay que enviar la imagen del estado/promo vigente (tras el texto).
     Si no hay estado guardado, lo informa para que el bot avise al cliente."""
     from app import promo_estado
-    if promo_estado.cargar_estado() is None:
+    if not await promo_estado.cargar_estados_activos(max_estados=1):
         return {"ok": False, "sin_estado": True,
                 "nota": "No hay un estado/promo vigente guardado. Avísale al cliente "
                         "con amabilidad que por ahora no hay una promo publicada."}

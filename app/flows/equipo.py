@@ -604,21 +604,22 @@ async def procesar_mensaje_equipo(
                 if ctx_tool.get("enviar_estado_actual"):
                     try:
                         from app import promo_estado
-                        estado = promo_estado.cargar_estado()
-                        if estado:
-                            path, caption = estado
-                            cap = caption or "📸 Estado/promo vigente de La Cantina Plus 🎶"
-                            if promo_estado.es_video(path):
+                        estados = await promo_estado.cargar_estados_activos()
+                        total = len(estados)
+                        for idx, estado in enumerate(estados, start=1):
+                            base_cap = estado.get("caption") or "Estado/promo vigente de La Cantina Plus"
+                            cap = f"Estado {idx}/{total}\n{base_cap}" if total > 1 else base_cap
+                            if estado.get("tipo") == "video":
                                 await enviar_video_bytes(
-                                    destino_envio, path.read_bytes(),
-                                    mime=promo_estado.mime_de(path),
-                                    filename=path.name, caption=cap,
+                                    destino_envio, estado["data"],
+                                    mime=estado["mime"],
+                                    filename=estado["filename"], caption=cap,
                                 )
                             else:
                                 await enviar_imagen_bytes(
-                                    destino_envio, path.read_bytes(),
-                                    mime=promo_estado.mime_de(path),
-                                    filename=path.name, caption=cap,
+                                    destino_envio, estado["data"],
+                                    mime=estado["mime"],
+                                    filename=estado["filename"], caption=cap,
                                 )
                     except Exception as e:
                         log.warning("flow_equipo.enviar_estado_fail", error=str(e))
