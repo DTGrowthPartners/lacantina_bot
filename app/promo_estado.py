@@ -92,7 +92,9 @@ async def cargar_estados_activos(max_estados: int = 10) -> list[dict[str, Any]]:
 
     estados: list[dict[str, Any]] = []
     try:
-        data = await listar_stories(count=100)
+        # Whapi mezcla los estados propios con los estados de contactos. En cuentas
+        # con muchos contactos, los propios pueden quedar mas atras de los primeros 100.
+        data = await listar_stories(count=500)
         items = data.get("stories") or data.get("messages") or data.get("data") or []
         candidatos = []
         for story in items:
