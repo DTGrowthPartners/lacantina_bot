@@ -396,7 +396,9 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
         "name": "listar_estados_programados",
         "description": (
             "Lista los proximos estados de WhatsApp pendientes de publicacion. "
-            "Usala cuando pregunten que estados hay programados o a que hora salen."
+            "Usala SOLO cuando pregunten que estados hay programados, pendientes, "
+            "en cola o a que hora salen. NO la uses para 'estados activos' o "
+            "'estados publicados ahora'; en ese caso usa enviar_estado_actual."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
@@ -417,10 +419,11 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
     {
         "name": "enviar_estado_actual",
         "description": (
-            "Envía al chat la IMAGEN o VIDEO del estado/promo vigente de La Cantina "
-            "(lo último que el equipo publicó). Úsalo cuando alguien pida 'el estado', "
-            "'la promo', 'la foto que subieron', 'el flyer', etc. "
-            "Si no hay estado vigente, la tool te avisa y lo dices con amabilidad."
+            "Envia al chat TODAS las IMAGENES o VIDEOS de estados/promos vigentes "
+            "publicados ahora en WhatsApp. Usalo cuando alguien pida 'los estados', "
+            "'estados activos', 'estados de WhatsApp', 'el estado', 'la promo', "
+            "'la foto que subieron', 'el flyer', etc. Si no hay estados vigentes, "
+            "la tool te avisa y lo dices con amabilidad."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },

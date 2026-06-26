@@ -124,6 +124,86 @@ def _historial_para_contexto(rows: list[Conversacion]) -> str:
     return "\n".join(lineas)
 
 
+def _pide_estados_publicados(texto: str) -> bool:
+    """Detecta pedidos de estados ya publicados, no la cola de programados."""
+    t = (texto or "").strip().lower()
+    if not t:
+        return False
+    if re.search(r"\b(programad[oa]s?|cola|pendientes?|agenda(?:dos?)?)\b", t):
+        return False
+    if re.search(r"\bactivos?\b", t) and re.search(
+        r"\b(p[aá]same\w*|manda(?:me)?\w*|env[ií]a(?:me)?\w*|mu[eé]strame\w*|ver|dame\w*|trae\w*)\b",
+        t,
+    ):
+        return True
+    if not re.search(r"\b(estado|estados|promo|promos|historia|historias)\b", t):
+        return False
+    return bool(re.search(
+        r"\b(p[aá]same\w*|manda(?:me)?\w*|env[ií]a(?:me)?\w*|mu[eé]strame\w*|ver|dame\w*|trae\w*|activos?|publicad[oa]s?)\b",
+        t,
+    ))
+
+
+async def _enviar_estados_publicados_equipo(
+    session: AsyncSession,
+    *,
+    cliente_id: int,
+    destino_envio: str,
+) -> int:
+    from app import promo_estado
+
+    estados = await promo_estado.cargar_estados_activos()
+    if not estados:
+        await enviar_texto(destino_envio, "No encontré estados de WhatsApp publicados activos ahora mismo.")
+        await guardar_conversacion(
+            session,
+            cliente_id=cliente_id,
+            direccion="outbound",
+            tipo="texto",
+            contenido="No encontré estados de WhatsApp publicados activos ahora mismo.",
+            metadata={"media": "estado_actual", "estado_total": 0},
+        )
+        return 0
+
+    total = len(estados)
+    for idx, estado in enumerate(estados, start=1):
+        base_cap = estado.get("caption") or "Estado/promo vigente de La Cantina Plus"
+        cap = f"Estado {idx}/{total}\n{base_cap}" if total > 1 else base_cap
+        if estado.get("tipo") == "video":
+            await enviar_video_bytes(
+                destino_envio,
+                estado["data"],
+                mime=estado["mime"],
+                filename=estado["filename"],
+                caption=cap,
+            )
+            tipo = "video"
+        else:
+            await enviar_imagen_bytes(
+                destino_envio,
+                estado["data"],
+                mime=estado["mime"],
+                filename=estado["filename"],
+                caption=cap,
+            )
+            tipo = "imagen"
+        await guardar_conversacion(
+            session,
+            cliente_id=cliente_id,
+            direccion="outbound",
+            tipo=tipo,
+            contenido="[estado/promo vigente]",
+            metadata={
+                "media": "estado_actual",
+                "estado_idx": idx,
+                "estado_total": total,
+                "story_id": estado.get("id"),
+            },
+        )
+    log.info("flow_equipo.estado_actual.directo", destino=destino_envio, cantidad=total)
+    return total
+
+
 _MESES_ES = {
     "enero": 1,
     "febrero": 2,
@@ -315,6 +395,15 @@ async def procesar_mensaje_equipo(
             media_url=msg.media_url,
             metadata={"es_equipo": True, "miembro": miembro.nombre, "es_grupo": es_grupo},
         )
+
+    if _pide_estados_publicados(instruccion):
+        await _enviar_estados_publicados_equipo(
+            session,
+            cliente_id=cliente_proxy.id,
+            destino_envio=destino_envio,
+        )
+        await session.commit()
+        return
 
     # Descargar imagen si llegó (multimodal vía visión + posible flyer de evento)
     imagen_b64: str | None = None
