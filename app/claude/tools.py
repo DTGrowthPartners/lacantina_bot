@@ -81,10 +81,27 @@ def _normalizar_nombre(valor: str | None) -> str:
     return re.sub(r"\s+", " ", (valor or "")).strip()
 
 
+_NOMBRES_RESERVA_INVALIDOS = {
+    "si", "sí", "no", "ok", "dale", "listo", "gracias",
+    "por favor", "porfa", "porfis", "porfi",
+    "correcto", "confirmo", "perfecto",
+}
+
+
+def _nombre_reserva_sospechoso(valor: str | None) -> bool:
+    nombre = _normalizar_nombre(valor).casefold()
+    return not nombre or nombre in _NOMBRES_RESERVA_INVALIDOS
+
+
+def _nombre_reserva_basura(valor: str | None) -> bool:
+    nombre = _normalizar_nombre(valor).casefold()
+    return bool(nombre) and nombre in _NOMBRES_RESERVA_INVALIDOS
+
+
 def _validar_nombre_reserva(args: dict, ctx: dict) -> dict | None:
     """Impide usar el pushname de WhatsApp o un nombre inferido por el modelo."""
     confirmado = _normalizar_nombre(ctx.get("nombre_reserva_confirmado"))
-    if not confirmado:
+    if _nombre_reserva_sospechoso(confirmado):
         log.warning(
             "tools.reserva.nombre_no_confirmado",
             cliente=ctx.get("cliente_numero"),
@@ -101,6 +118,84 @@ def _validar_nombre_reserva(args: dict, ctx: dict) -> dict | None:
         }
     args["nombre_cliente"] = confirmado
     return None
+
+
+def _reservas_en_respuesta(res: dict) -> list[dict]:
+    if not isinstance(res, dict):
+        return []
+    reservas = res.get("reservas")
+    if isinstance(reservas, list):
+        return [r for r in reservas if isinstance(r, dict)]
+    reserva = _extraer_reserva(res)
+    return [reserva] if reserva else []
+
+
+async def _autocorregir_nombre_reserva(
+    tipo: str,
+    args: dict,
+    ctx: dict,
+    res: dict,
+) -> dict:
+    """Corrige nombres basura antes de notificar al grupo del equipo."""
+    if not (isinstance(res, dict) and res.get("ok")):
+        return res
+
+    nombre_correcto = _normalizar_nombre(ctx.get("nombre_reserva_confirmado"))
+    if _nombre_reserva_sospechoso(nombre_correcto):
+        return res
+
+    reservas = _reservas_en_respuesta(res)
+    sospechosas = [
+        reserva for reserva in reservas
+        if _nombre_reserva_basura(reserva.get("nombre_cliente"))
+    ]
+    if not sospechosas and not _nombre_reserva_basura(args.get("nombre_cliente")):
+        return res
+
+    actualizador = (
+        cantina_api.actualizar_reserva_sala
+        if tipo == "sala"
+        else cantina_api.actualizar_reserva
+    )
+    ids = [r.get("id") for r in (sospechosas or reservas) if r.get("id")]
+    if not ids and res.get("id"):
+        ids = [res.get("id")]
+
+    corregidas = 0
+    for reserva_id in ids:
+        try:
+            actualizado = await actualizador(reserva_id, {"nombre_cliente": nombre_correcto})
+        except Exception as e:
+            log.warning(
+                "tools.reserva.nombre_autocorreccion_fail",
+                reserva_id=reserva_id,
+                error=str(e)[:160],
+            )
+            continue
+        if isinstance(actualizado, dict) and actualizado.get("ok", True):
+            corregidas += 1
+
+    if not corregidas:
+        return res
+
+    args["nombre_cliente"] = nombre_correcto
+    for reserva in reservas:
+        if reserva.get("id") in ids or _nombre_reserva_basura(reserva.get("nombre_cliente")):
+            reserva["nombre_cliente"] = nombre_correcto
+    if isinstance(res.get("reserva"), dict):
+        res["reserva"]["nombre_cliente"] = nombre_correcto
+    if isinstance(res.get("data"), dict):
+        res["data"]["nombre_cliente"] = nombre_correcto
+    res["nombre_autocorregido"] = True
+    res["nombre_cliente"] = nombre_correcto
+    log.info(
+        "tools.reserva.nombre_autocorregido",
+        tipo=tipo,
+        cliente=ctx.get("cliente_numero"),
+        reservas=ids,
+        nombre=nombre_correcto,
+    )
+    return res
 
 
 def _clave_intento_reserva(tipo: str, payload: dict) -> tuple:
@@ -640,6 +735,7 @@ async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
         return previo
     res = await cantina_api.crear_reserva(payload)
     res = _anotar_politica_horario_cover(res)
+    res = await _autocorregir_nombre_reserva("simple", args, ctx, res)
     res = _guardar_resultado_reserva("simple", payload, ctx, res)
     if res.get("ok"):
         outbox = ctx.get("outbox")
@@ -675,6 +771,7 @@ async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
         return previo
     res = await cantina_api.crear_reserva_grupo(payload)
     res = _anotar_politica_horario_cover(res)
+    res = await _autocorregir_nombre_reserva("grupo", args, ctx, res)
     res = _guardar_resultado_reserva("grupo", payload, ctx, res)
     if isinstance(res, dict) and res.get("ok"):
         outbox = ctx.get("outbox")
@@ -709,6 +806,7 @@ async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
     if previo is not None:
         return previo
     res = await cantina_api.crear_reserva_sala(payload)
+    res = await _autocorregir_nombre_reserva("sala", args, ctx, res)
     res = _guardar_resultado_reserva("sala", payload, ctx, res)
     if isinstance(res, dict) and res.get("ok"):
         outbox = ctx.get("outbox")

@@ -46,6 +46,19 @@ class NombreReservaTests(unittest.TestCase):
 
         self.assertIsNone(nombre)
 
+    def test_limpia_por_favor_antes_del_nombre(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="Por favor Juan Otalvaro"),
+        ]
+
+        nombre = _nombre_reserva_explicito("Por favor Juan Otalvaro", historial)
+
+        self.assertEqual(nombre, "Juan Otalvaro")
+
     def test_acepta_nombre_dado_proactivamente(self):
         nombre = _nombre_reserva_explicito(
             "La reserva va a nombre de Carlos Pérez",
@@ -186,6 +199,11 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
                 "crear_reserva_grupo",
                 new=AsyncMock(return_value=respuesta),
             ) as crear,
+            patch.object(
+                tools.cantina_api,
+                "actualizar_reserva",
+                new=AsyncMock(),
+            ) as actualizar,
         ):
             result = await tools.handler_crear_reserva_grupo(
                 {
@@ -200,6 +218,7 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result["ok"])
         crear.assert_awaited_once()
+        actualizar.assert_not_awaited()
         self.assertEqual(
             crear.await_args.args[0]["nombre_cliente"],
             "Laura Martínez",
@@ -216,6 +235,57 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("*Estado:* confirmada", mensaje)
         self.assertIn("*Cover:* pendiente · $250.000", mensaje)
         self.assertIn("*Notas:* Cumpleaños", mensaje)
+
+    async def test_corrige_nombre_basura_antes_de_alertar_al_grupo(self):
+        ctx = {
+            "cliente_numero": "+573108291174",
+            "nombre_reserva_confirmado": "Juan Otalvaro",
+            "outbox": [],
+        }
+        respuesta = {
+            "ok": True,
+            "reserva": {
+                "id": 199,
+                "estado": "confirmada",
+                "nombre_cliente": "Por favor",
+                "mesa_numero": 20,
+                "mesa_zona": "VIP",
+            },
+        }
+
+        with (
+            patch.object(
+                tools.cantina_api,
+                "listar_reservas",
+                new=AsyncMock(return_value={"ok": True, "reservas": []}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "crear_reserva",
+                new=AsyncMock(return_value=respuesta),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "actualizar_reserva",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as actualizar,
+        ):
+            result = await tools.handler_crear_reserva(
+                {
+                    "fecha": "2026-07-03",
+                    "mesa_id": 20,
+                    "nombre_cliente": "Por favor",
+                    "num_personas": 6,
+                },
+                ctx,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["nombre_autocorregido"])
+        actualizar.assert_awaited_once_with(199, {"nombre_cliente": "Juan Otalvaro"})
+        mensaje = ctx["outbox"][0]["mensaje"]
+        self.assertIn("*A nombre de:* Juan Otalvaro", mensaje)
+        self.assertNotIn("*A nombre de:* Por favor", mensaje)
 
     async def test_no_repite_la_misma_creacion_en_un_turno(self):
         ctx = {

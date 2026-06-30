@@ -100,6 +100,12 @@ def _limpiar_nombre_reserva(valor: str | None) -> str | None:
     """Normaliza un nombre que el cliente dio expresamente para la reserva."""
     nombre = re.sub(r"\s+", " ", (valor or "")).strip(" \t\r\n.,;:!?\"'")
     nombre = re.sub(
+        r"^(?:por\s+favor|porfa|porfis|porfi)\s+",
+        "",
+        nombre,
+        flags=re.IGNORECASE,
+    ).strip(" \t\r\n.,;:!?\"'")
+    nombre = re.sub(
         r"^(?:mi nombre(?: es)?|soy)\s+",
         "",
         nombre,
