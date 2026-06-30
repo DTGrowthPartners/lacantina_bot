@@ -35,6 +35,7 @@ from app.claude.intent import clasificar
 from app.config import get_settings
 from app.db.models import Cliente, Conversacion
 from app.db.repos import bot_activo, guardar_conversacion, ultimos_mensajes
+from app.event_media import MIME, flyer_path_evento
 from app.logging_setup import log
 from app.menu_media import MENU_URL, pide_menu
 from app.utils.humanizer import (
@@ -64,8 +65,6 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 
 _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
 _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
-_FLYERS_DIR = Path(settings.data_dir) / "media" / "flyers"
-
 _INTENTS_ESCALACION_OBLIGATORIA = {"pide_humano", "queja"}
 
 
@@ -223,25 +222,54 @@ def _nombre_reserva_explicito(mensaje_actual: str, historial_db: list) -> str | 
     return None
 
 
+async def _enviar_flyer_eventos(
+    session: AsyncSession,
+    cliente_id: int,
+    cliente_numero: str,
+    eventos: list[dict],
+) -> None:
+    """Envía flyers por evento/hora; cae al flyer legacy por fecha si aplica."""
+    enviados: set[Path] = set()
+    for evento in eventos:
+        p = flyer_path_evento(evento)
+        if not p or p in enviados:
+            continue
+        enviados.add(p)
+        nombre = str(evento.get("nombre") or "evento")
+        fecha = str(evento.get("fecha") or "")
+        hora = str(evento.get("hora_inicio") or evento.get("hora") or "").strip()
+        caption = "🎟️ "
+        if hora:
+            caption += f"{hora} · "
+        caption += f"{nombre} 🎶"
+        try:
+            await enviar_imagen_bytes(
+                cliente_numero,
+                p.read_bytes(),
+                mime=MIME.get(p.suffix.lower(), "image/jpeg"),
+                caption=caption,
+            )
+            await guardar_conversacion(
+                session,
+                cliente_id=cliente_id,
+                direccion="outbound",
+                tipo="imagen",
+                contenido="[flyer del evento]",
+                metadata={
+                    "media": "flyer_evento",
+                    "fecha": fecha,
+                    "hora_inicio": hora,
+                    "evento": nombre,
+                },
+            )
+            log.info("flow.flyer_evento.enviado", cliente=cliente_numero, fecha=fecha, hora=hora)
+        except Exception as e:
+            log.warning("flow.flyer_evento.fail", error=str(e))
+
+
 async def _enviar_flyer_evento(session: AsyncSession, cliente_id: int, cliente_numero: str, fecha: str) -> None:
-    """Envía el flyer del evento de una fecha (si existe), tras el texto."""
-    p = next((c for ext in (".jpg", ".jpeg", ".png", ".webp")
-              if (c := _FLYERS_DIR / f"{fecha}{ext}").exists()), None)
-    if not p:
-        return
-    try:
-        mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
-        await enviar_imagen_bytes(
-            cliente_numero, p.read_bytes(), mime=mime,
-            caption="🎟️ ¡Te esperamos en el evento! 🎶",
-        )
-        await guardar_conversacion(
-            session, cliente_id=cliente_id, direccion="outbound", tipo="imagen",
-            contenido="[flyer del evento]", metadata={"media": "flyer_evento", "fecha": fecha},
-        )
-        log.info("flow.flyer_evento.enviado", cliente=cliente_numero, fecha=fecha)
-    except Exception as e:
-        log.warning("flow.flyer_evento.fail", error=str(e))
+    """Compatibilidad: envía el flyer legacy de una fecha."""
+    await _enviar_flyer_eventos(session, cliente_id, cliente_numero, [{"fecha": fecha, "nombre": "evento"}])
 
 
 async def _enviar_link_menu(session: AsyncSession, cliente_id: int, cliente_numero: str) -> None:
@@ -646,6 +674,8 @@ async def procesar_mensaje_inbound(
         )
     if ctx.get("enviar_estado_actual"):
         await _enviar_estado_actual(session, cliente_id, cliente_numero)
+    if ctx.get("flyer_eventos"):
+        await _enviar_flyer_eventos(session, cliente_id, cliente_numero, ctx["flyer_eventos"])
     if ctx.get("flyer_evento_fecha"):
         await _enviar_flyer_evento(session, cliente_id, cliente_numero, ctx["flyer_evento_fecha"])
 

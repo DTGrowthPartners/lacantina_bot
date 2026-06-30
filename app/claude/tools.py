@@ -21,6 +21,7 @@ from typing import Awaitable, Callable
 
 from app.integrations import cantina_api
 from app.eventos import clave_orden_evento, extraer_eventos
+from app.event_media import leer_descripcion_evento
 from app.logging_setup import log
 
 
@@ -681,6 +682,13 @@ async def handler_consultar_evento(args: dict, ctx: dict) -> dict:
         eventos = extraer_eventos(res)
         if eventos:
             eventos.sort(key=clave_orden_evento)
+            for evento in eventos:
+                try:
+                    descripcion = leer_descripcion_evento(evento)
+                    if descripcion:
+                        evento["descripcion"] = descripcion
+                except Exception:
+                    pass
             res["eventos"] = eventos
             res["total_eventos"] = len(eventos)
             if len(eventos) > 1:
@@ -688,17 +696,10 @@ async def handler_consultar_evento(args: dict, ctx: dict) -> dict:
                     "Hay varios eventos registrados para esta fecha. Menciona "
                     "todos, diferenciándolos por hora_inicio si está disponible."
                 )
-        # Marca la fecha para que el flow envíe el flyer (si existe).
-        ctx["flyer_evento_fecha"] = fecha
-        # Descripción local del evento (el backend no la guarda).
-        try:
-            from pathlib import Path
-            from app.config import get_settings
-            d = Path(get_settings().data_dir) / "media" / "flyers" / f"{fecha}.txt"
-            if d.exists():
-                res["descripcion"] = d.read_text(encoding="utf-8")
-        except Exception:
-            pass
+            ctx["flyer_eventos"] = eventos
+        else:
+            # Compatibilidad: si el backend no mandó lista, intenta flyer legacy por fecha.
+            ctx["flyer_evento_fecha"] = fecha
     return _anotar_politica_horario_cover(res)
 
 

@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from app.claude import tools, tools_equipo
+from app.event_media import clave_evento
 from app.eventos import extraer_eventos, resumen_eventos
 
 
@@ -45,7 +46,8 @@ class EventosMultiplesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["total_eventos"], 2)
         self.assertEqual([e["nombre"] for e in res["eventos"]], ["Partido", "Show noche"])
         self.assertIn("politica_horario_cover", res)
-        self.assertEqual(ctx["flyer_evento_fecha"], "2026-07-03")
+        self.assertEqual(len(ctx["flyer_eventos"]), 2)
+        self.assertEqual(ctx["flyer_eventos"][0]["hora_inicio"], "18:00")
 
     async def test_equipo_eventos_del_mes_conserva_dos_eventos_misma_fecha(self):
         backend = {
@@ -67,3 +69,7 @@ class EventosMultiplesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["total"], 2)
         self.assertEqual([e["nombre"] for e in res["eventos"]], ["Partido", "Show noche"])
 
+    def test_clave_flyer_depende_de_fecha_y_hora(self):
+        self.assertEqual(clave_evento("2026-07-03", "18:00"), "2026-07-03__18-00")
+        self.assertEqual(clave_evento("2026-07-03", "22:30"), "2026-07-03__22-30")
+        self.assertEqual(clave_evento("2026-07-03"), "2026-07-03")

@@ -21,6 +21,15 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from app.admin._shell import ICON_SPRITE, SHELL_STYLES, THEME_TOGGLE_JS, sidebar_html
 from app.config import get_settings
+from app.event_media import (
+    EXT_OK,
+    MIME,
+    descripcion_path,
+    flyer_path as media_flyer_path,
+    flyer_path_evento,
+    guardar_descripcion,
+    guardar_flyer,
+)
 from app.eventos import clave_orden_evento, etiqueta_hora, extraer_eventos
 from app.integrations import cantina_api
 from app.logging_setup import log
@@ -29,8 +38,6 @@ router = APIRouter(prefix="/admin/eventos", tags=["admin-eventos"])
 
 settings = get_settings()
 _FLYERS = Path(settings.data_dir) / "media" / "flyers"
-_EXT_OK = {".jpg", ".jpeg", ".png", ".webp"}
-_MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 
 
 def _check_auth(request: Request) -> bool:
@@ -41,13 +48,9 @@ def _hoy() -> str:
     return datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
 
 
-def flyer_path(fecha: str) -> Path | None:
-    """Ruta del flyer de una fecha si existe (cualquier extensión soportada)."""
-    for ext in _EXT_OK:
-        p = _FLYERS / f"{fecha}{ext}"
-        if p.exists():
-            return p
-    return None
+def flyer_path(fecha: str, hora_inicio: str | None = None) -> Path | None:
+    """Ruta del flyer de una fecha/hora si existe."""
+    return media_flyer_path(fecha, hora_inicio)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -69,30 +72,33 @@ async def vista(request: Request):
     cards = []
     for e in eventos:
         fecha = str(e.get("fecha") or "")
+        fe = html.escape(fecha)
         hora = etiqueta_hora(e)
+        hora_inicio = str(e.get("hora_inicio") or e.get("hora") or "")
         nombre = html.escape(str(e.get("nombre") or "Evento"))
         artista = html.escape(str(e.get("artista") or ""))
         cover = e.get("valor_cover")
         tiene_cover = e.get("tiene_cover")
         link = e.get("link_pago")
         pasada = fecha and fecha < hoy
-        flyer = flyer_path(fecha)
-        flyer_html = (f'<img class="ev-flyer" src="/admin/eventos/flyer/{html.escape(fecha)}" loading="lazy"/>'
+        flyer = flyer_path_evento(e)
+        flyer_url = f"/admin/eventos/flyer/{html.escape(fecha)}/{html.escape(hora_inicio)}" if hora_inicio else f"/admin/eventos/flyer/{html.escape(fecha)}"
+        flyer_form_action = f"/admin/eventos/{fe}/{html.escape(hora_inicio)}/flyer" if hora_inicio else f"/admin/eventos/{fe}/flyer"
+        flyer_html = (f'<img class="ev-flyer" src="{flyer_url}" loading="lazy"/>'
                       if flyer else '<div class="ev-flyer ev-noflyer">sin flyer</div>')
         cover_txt = (f"Cover ${cover:,}".replace(",", ".") if (tiene_cover and cover) else
                      ("Con cover" if tiene_cover else "Entrada libre"))
         link_html = (f'<a href="{html.escape(str(link))}" target="_blank" class="ev-link">🔗 link de pago</a>'
                      if link else "")
-        txt = _FLYERS / f"{fecha}.txt"
+        txt = descripcion_path(fecha, hora_inicio)
         desc_raw = ""
-        if txt.exists():
+        if txt and txt.exists():
             try:
                 desc_raw = txt.read_text(encoding="utf-8")[:300]
             except Exception:
                 desc_raw = ""
         desc = html.escape(desc_raw)
         cover_val = "" if cover is None else str(cover)
-        fe = html.escape(fecha)
         data_attrs = (
             f'data-fecha="{fe}" '
             f'data-horainicio="{html.escape(str(e.get("hora_inicio") or ""))}" '
@@ -116,7 +122,7 @@ async def vista(request: Request):
             {link_html}
             <div class="ev-acts">
               <button type="button" class="ev-act" onclick="editarEvento(this)">✏️ Editar</button>
-              <form method="POST" action="/admin/eventos/{fe}/flyer" enctype="multipart/form-data" style="margin:0;">
+              <form method="POST" action="{flyer_form_action}" enctype="multipart/form-data" style="margin:0;">
                 <label class="ev-act" style="cursor:pointer;">📷 {'Cambiar' if flyer else 'Agregar'} flyer
                   <input type="file" name="flyer" accept="image/*" onchange="this.form.submit()" hidden/>
                 </label>
@@ -159,13 +165,18 @@ async def vista(request: Request):
 
 
 @router.get("/flyer/{fecha}")
-async def servir_flyer(fecha: str, request: Request):
+async def servir_flyer_legacy(fecha: str, request: Request):
+    return await servir_flyer(fecha, "", request)
+
+
+@router.get("/flyer/{fecha}/{hora_inicio}")
+async def servir_flyer(fecha: str, hora_inicio: str, request: Request):
     if not _check_auth(request):
         raise HTTPException(401)
-    p = flyer_path(fecha)
+    p = flyer_path(fecha, hora_inicio or None)
     if not p:
         raise HTTPException(404)
-    return FileResponse(str(p), media_type=_MIME.get(p.suffix.lower(), "image/jpeg"))
+    return FileResponse(str(p), media_type=MIME.get(p.suffix.lower(), "image/jpeg"))
 
 
 @router.post("/crear")
@@ -210,26 +221,24 @@ async def crear(
     archivo = form.get("flyer")
     if archivo is not None and getattr(archivo, "filename", ""):
         ext = Path(archivo.filename).suffix.lower()
-        if ext in _EXT_OK:
+        if ext in EXT_OK:
             data = await archivo.read()
             if data:
-                _FLYERS.mkdir(parents=True, exist_ok=True)
-                # un flyer por fecha: borra otros con la misma fecha
-                for e in _EXT_OK:
-                    old = _FLYERS / f"{fecha}{e}"
-                    if old.exists():
-                        old.unlink()
-                (_FLYERS / f"{fecha}{ext}").write_bytes(data)
+                guardar_flyer(fecha, hora_inicio.strip() or None, data, MIME.get(ext, "image/jpeg"))
     # Descripción (sidecar local; el backend de eventos no la guarda).
     if descripcion.strip():
-        _FLYERS.mkdir(parents=True, exist_ok=True)
-        (_FLYERS / f"{fecha}.txt").write_text(descripcion.strip(), encoding="utf-8")
+        guardar_descripcion(fecha, hora_inicio.strip() or None, descripcion.strip())
     log.info("admin.eventos.creado", fecha=fecha, nombre=nombre)
     return RedirectResponse("/admin/eventos?msg=creado", status_code=303)
 
 
 @router.post("/{fecha}/flyer")
-async def subir_flyer(fecha: str, request: Request):
+async def subir_flyer_legacy(fecha: str, request: Request):
+    return await subir_flyer(fecha, "", request)
+
+
+@router.post("/{fecha}/{hora_inicio}/flyer")
+async def subir_flyer(fecha: str, hora_inicio: str, request: Request):
     """Sube/reemplaza SOLO el flyer de un evento ya existente."""
     if not _check_auth(request):
         raise HTTPException(401)
@@ -238,18 +247,13 @@ async def subir_flyer(fecha: str, request: Request):
     if archivo is None or not getattr(archivo, "filename", ""):
         return RedirectResponse("/admin/eventos?msg=error:no adjuntaste imagen", status_code=303)
     ext = Path(archivo.filename).suffix.lower()
-    if ext not in _EXT_OK:
+    if ext not in EXT_OK:
         return RedirectResponse("/admin/eventos?msg=error:formato no soportado (usa jpg/png/webp)", status_code=303)
     data = await archivo.read()
     if not data:
         return RedirectResponse("/admin/eventos?msg=error:imagen vacía", status_code=303)
-    _FLYERS.mkdir(parents=True, exist_ok=True)
-    for e in _EXT_OK:
-        old = _FLYERS / f"{fecha}{e}"
-        if old.exists():
-            old.unlink()
-    (_FLYERS / f"{fecha}{ext}").write_bytes(data)
-    log.info("admin.eventos.flyer_subido", fecha=fecha)
+    guardar_flyer(fecha, hora_inicio or None, data, MIME.get(ext, "image/jpeg"))
+    log.info("admin.eventos.flyer_subido", fecha=fecha, hora=hora_inicio)
     return RedirectResponse("/admin/eventos?msg=flyer_ok", status_code=303)
 
 
@@ -258,16 +262,9 @@ async def borrar(fecha: str, request: Request):
     if not _check_auth(request):
         raise HTTPException(401)
     res = await cantina_api.borrar_evento(fecha)
-    p = flyer_path(fecha)
-    if p:
+    for path in _FLYERS.glob(f"{fecha}*"):
         try:
-            p.unlink()
-        except Exception:
-            pass
-    txt = _FLYERS / f"{fecha}.txt"
-    if txt.exists():
-        try:
-            txt.unlink()
+            path.unlink()
         except Exception:
             pass
     if isinstance(res, dict) and res.get("ok"):

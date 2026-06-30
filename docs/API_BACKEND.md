@@ -125,6 +125,10 @@ Mínimo de consumo $1.000.000. 1 reserva por sala por día, máx 10p.
 | POST | `/api/eventos` | Crear/actualizar (`fecha`, `nombre` obligatorios; `hora_inicio`, `hora_fin`, `artista`, `tiene_cover`, `valor_cover`, `link_pago`). |
 | DELETE | `/api/eventos/:fecha` | Apagar modo evento (las reservas se conservan). |
 
+El bot guarda flyers locales por `fecha + hora_inicio` (`YYYY-MM-DD__HH-MM`) para
+que dos eventos del mismo día puedan tener imágenes distintas. Si no existe un
+flyer por hora, cae al flyer legacy por fecha.
+
 ### Resumen del día (equipo)
 
 | Método | Ruta | Función |
