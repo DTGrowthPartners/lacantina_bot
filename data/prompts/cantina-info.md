@@ -119,11 +119,14 @@ contiguas**. Incluso se puede reservar **un pasillo entero**.
 ## Eventos y cover
 
 - ~1 evento al mes con cantante invitado y **cover por persona**.
-- El cover se cobra **únicamente desde las 9:00 p. m. en adelante**. Quien
-  ingresa antes de las 9:00 p. m. no paga cover, incluso en un día de evento.
-- Esta regla depende de la **hora real de ingreso**, no de la hora en que se
-  hizo la reserva. Nunca prometas exención a alguien que piensa llegar después
-  de las 9:00 p. m.
+- El cover aplica **desde las 9:00 p. m. en adelante**. Quien ingresa desde esa
+  hora paga cover, y quien ingresó antes pero se queda al evento de las 9:00 p. m.
+  también debe pagarlo.
+- Quien entra antes de las 9:00 p. m. y no desea pagar cover debe retirarse antes
+  de que empiece el cobro.
+- Esta regla depende de la **hora real de ingreso y permanencia**, no de la hora
+  en que se hizo la reserva. Nunca prometas exención a alguien que piensa llegar
+  después de las 9:00 p. m. o quedarse al evento con cover.
 - Cuando aplica: `monto_cover_total = valor_cover × num_personas`.
 - Pago del cover:
   - **Anticipado** — transferencia, hay `link_pago`.
@@ -148,8 +151,9 @@ contiguas**. Incluso se puede reservar **un pasillo entero**.
    quién va la reserva**. Este nombre debe darlo expresamente el cliente; nunca
    se toma del perfil de WhatsApp.
 2. Llamar `consultar_disponibilidad(fecha, personas)`:
-  - Si hay `evento` → avisar del **cover por persona**, aclarar que solo se
-    cobra desde las **9:00 p. m.**, y, si es VIP, la `nota_vip`.
+  - Si hay `evento` → avisar del **cover por persona**, aclarar que aplica desde
+    las **9:00 p. m.** para quienes ingresen desde esa hora o se queden al evento,
+    y, si es VIP, la `nota_vip`.
    - Si `requiere_combinar` → ofrecer **unir mesas** (`combo_sugerido`).
    - Si el grupo es grande/exclusivo → ofrecer **sala privada**.
    - Para "muéstrame el mapa / cómo están las mesas / la distribución" → llamar
@@ -162,8 +166,9 @@ contiguas**. Incluso se puede reservar **un pasillo entero**.
      pasillo/grupo (ver *"Reservas masivas / pasillo completo"*)
    - Sala privada → `crear_reserva_sala_privada`
 4. Confirmar con el `mensaje` que devuelve la API. Si hay cover, recordar que
-   solo se cobra desde las **9:00 p. m.** e indicar pago **anticipado**
-   (`link_pago`) o **en la entrada** cuando corresponda.
+   aplica desde las **9:00 p. m.** para quienes ingresen desde esa hora o se
+   queden al evento, e indicar pago **anticipado** (`link_pago`) o **en la
+   entrada** cuando corresponda.
 
 ## Notas operativas para el bot
 

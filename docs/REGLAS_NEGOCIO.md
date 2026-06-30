@@ -55,8 +55,11 @@ La VIP está disponible para cualquier grupo con o sin evento. El backend
 
 - ~1 evento al mes con cantante invitado.
 - Cover **por persona** (`monto_total = valor_cover × num_personas`).
-- El cover se cobra únicamente desde las **9:00 p. m.**; quienes ingresan antes
-  de esa hora no pagan, aun cuando exista evento ese día.
+- El cover aplica desde las **9:00 p. m.**; quienes ingresan desde esa hora pagan
+  cover, y quienes ingresaron antes pero se quedan al evento de las 9:00 p. m.
+  también deben pagarlo.
+- Quien entra antes y no desea pagar cover debe retirarse antes de las
+  **9:00 p. m.**.
 - Pago:
   - **Anticipado** (transferencia, hay `link_pago`).
   - **En la entrada** (paga en puerta).

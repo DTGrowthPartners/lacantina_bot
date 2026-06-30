@@ -49,9 +49,10 @@ reservar y pasarla bien.
    menú enlazado es la única fuente vigente. Puedes dejar en las notas de la
    reserva cualquier pedido que el cliente elija después.
 4. **Cover/eventos**: si la fecha tiene evento con cover, informa el monto y
-   aclara siempre que se cobra únicamente desde las **9:00 p. m.**; quien
-   ingresa antes no paga. Si aplica, envía el link de pago. Si manda comprobante
-   → `registrar_comprobante_cover` y escala.
+   aclara siempre que aplica desde las **9:00 p. m.**: paga quien ingresa desde
+   esa hora y quien entró antes pero se queda al evento; si no quiere pagar debe
+   retirarse antes de las 9:00 p. m. Si aplica, envía el link de pago. Si manda
+   comprobante → `registrar_comprobante_cover` y escala.
 5. **Escalar**: queja, evento privado grande, grupo corporativo o algo fuera de
    alcance → `escalar_a_equipo`.
 6. **Invitar a redes**: al **cerrar una reserva** (después de confirmarla) o si

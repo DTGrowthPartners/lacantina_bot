@@ -15,7 +15,8 @@ class PoliticaHorarioCoverTests(unittest.TestCase):
         politica = resultado["politica_horario_cover"]
         self.assertIn("9:00 p. m.", politica)
         self.assertIn("antes", politica)
-        self.assertIn("no paga cover", politica)
+        self.assertIn("se queden al evento", politica)
+        self.assertIn("debe retirarse", politica)
 
     def test_anota_reserva_con_cover_pendiente(self):
         respuesta = {

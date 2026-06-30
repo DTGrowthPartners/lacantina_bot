@@ -26,9 +26,11 @@ from app.logging_setup import log
 
 
 _POLITICA_HORARIO_COVER = (
-    "REGLA OBLIGATORIA: en días de evento el cover se cobra únicamente a quienes "
-    "ingresan desde las 9:00 p. m. en adelante. Quien ingresa antes de las 9:00 "
-    "p. m. no paga cover. Acláralo siempre al cliente cuando menciones el cover."
+    "REGLA OBLIGATORIA: en días de evento el cover aplica desde las 9:00 p. m. "
+    "a quienes ingresen desde esa hora y también a quienes hayan entrado antes "
+    "pero se queden al evento de las 9:00 p. m. o más tarde. Si alguien entra "
+    "antes y no quiere pagar cover, debe retirarse antes de las 9:00 p. m. "
+    "Acláralo siempre al cliente cuando menciones el cover."
 )
 
 
