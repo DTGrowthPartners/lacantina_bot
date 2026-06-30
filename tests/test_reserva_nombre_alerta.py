@@ -33,6 +33,19 @@ class NombreReservaTests(unittest.TestCase):
 
         self.assertIsNone(nombre)
 
+    def test_no_toma_por_favor_como_nombre(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="Por favor"),
+        ]
+
+        nombre = _nombre_reserva_explicito("Por favor", historial)
+
+        self.assertIsNone(nombre)
+
     def test_acepta_nombre_dado_proactivamente(self):
         nombre = _nombre_reserva_explicito(
             "La reserva va a nombre de Carlos Pérez",

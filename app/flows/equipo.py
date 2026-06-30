@@ -268,6 +268,64 @@ def _formatear_eventos_mes(res: dict, mes: str) -> str:
     return "\n".join(lineas)
 
 
+def _limpiar_nombre_directo(valor: str | None) -> str | None:
+    nombre = re.sub(r"\s+", " ", (valor or "")).strip(" \t\r\n.,;:!?\"'“”")
+    nombre = re.sub(
+        r"^(?:mi nombre(?: es)?|soy|a nombre de|nombre correcto(?: es)?|correcto es)\s+",
+        "",
+        nombre,
+        flags=re.IGNORECASE,
+    ).strip(" \t\r\n.,;:!?\"'“”")
+    if not (2 <= len(nombre) <= 80):
+        return None
+    if len(nombre.split()) > 8 or not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", nombre):
+        return None
+    if nombre.casefold() in {
+        "si", "sí", "no", "ok", "dale", "listo", "gracias",
+        "por favor", "porfa", "correcto", "confirmo", "perfecto",
+    }:
+        return None
+    return nombre
+
+
+def _correccion_nombre_reserva_pedida(texto: str | None) -> dict | None:
+    """Detecta pedidos claros tipo: reserva ID 199, nombre correcto es "Juan"."""
+    if not texto:
+        return None
+    limpio = " ".join(texto.split())
+    if not re.search(r"\breserva\b", limpio, re.IGNORECASE):
+        return None
+    if not re.search(r"\b(nombre|a nombre de)\b", limpio, re.IGNORECASE):
+        return None
+    if not re.search(r"\b(correg|corrij|correct|actualiz|cambi)\w*", limpio, re.IGNORECASE):
+        return None
+
+    id_match = re.search(
+        r"\b(?:reserva\s*)?(?:id|#)\s*[:#-]?\s*(\d+)\b",
+        limpio,
+        re.IGNORECASE,
+    )
+    if not id_match:
+        return None
+
+    patrones_nombre = [
+        r"nombre\s+correcto\s+es\s+[\"'“”]?(.+?)[\"'“”]?(?:\.|$)",
+        r"correcto\s+es\s+[\"'“”]?(.+?)[\"'“”]?(?:\.|$)",
+        r"corr[íi]g(?:e|elo|ela|elo)?(?:\s+el)?\s+nombre\s+(?:a|como|por)\s+[\"'“”]?(.+?)[\"'“”]?(?:\.|$)",
+        r"cambia(?:r)?(?:\s+el)?\s+nombre\s+(?:a|por)\s+[\"'“”]?(.+?)[\"'“”]?(?:\.|$)",
+    ]
+    nombre = None
+    for patron in patrones_nombre:
+        match = re.search(patron, limpio, re.IGNORECASE)
+        if match:
+            nombre = _limpiar_nombre_directo(match.group(1))
+            if nombre:
+                break
+    if not nombre:
+        return None
+    return {"reserva_id": int(id_match.group(1)), "nombre_cliente": nombre}
+
+
 async def procesar_mensaje_equipo(
     *,
     session: AsyncSession,
@@ -530,6 +588,47 @@ async def procesar_mensaje_equipo(
         "video_bytes": video_bytes,
         "video_mime": video_mime,
     }
+
+    correccion_nombre = _correccion_nombre_reserva_pedida(instruccion)
+    if correccion_nombre and not imagen_b64 and msg.tipo == "texto":
+        result = await HANDLERS_EQUIPO["actualizar_reserva"](correccion_nombre, ctx_tool)
+        if isinstance(result, dict) and result.get("ok"):
+            texto_final = (
+                f"Listo, corregí la reserva #{correccion_nombre['reserva_id']}: "
+                f"el nombre quedó como {correccion_nombre['nombre_cliente']}."
+            )
+        else:
+            err = (result or {}).get("error") if isinstance(result, dict) else None
+            texto_final = (
+                f"No pude corregir la reserva #{correccion_nombre['reserva_id']} "
+                f"ahora mismo{f': {err}' if err else '.'}"
+            )
+        try:
+            await enviar_texto(destino_envio, texto_final)
+        except Exception as e:
+            log.error("flow_equipo.correccion_nombre_directa.enviar_fail", error=str(e))
+        await guardar_conversacion(
+            session,
+            cliente_id=cliente_proxy.id,
+            direccion="outbound",
+            tipo="texto",
+            contenido=texto_final,
+            modelo="directo",
+            metadata={
+                "es_equipo": True,
+                "miembro": miembro.nombre,
+                "tools": ["actualizar_reserva"],
+                "directo": True,
+                "correccion_nombre_reserva": correccion_nombre,
+            },
+        )
+        log.info(
+            "flow_equipo.correccion_nombre_directa",
+            miembro=miembro.nombre,
+            reserva_id=correccion_nombre["reserva_id"],
+            ok=bool(isinstance(result, dict) and result.get("ok")),
+        )
+        return
 
     if pide_imagen_menu(instruccion) and not imagen_b64 and msg.tipo == "texto":
         paginas = imagenes_menu()

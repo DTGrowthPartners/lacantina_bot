@@ -116,7 +116,10 @@ def _limpiar_nombre_reserva(valor: str | None) -> str | None:
         return None
     if len(nombre.split()) > 8 or not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", nombre):
         return None
-    if nombre.casefold() in {"si", "sí", "no", "ok", "dale", "listo", "gracias"}:
+    if nombre.casefold() in {
+        "si", "sí", "no", "ok", "dale", "listo", "gracias",
+        "por favor", "porfa", "correcto", "confirmo", "perfecto",
+    }:
         return None
     return nombre
 
