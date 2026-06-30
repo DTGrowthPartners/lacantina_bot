@@ -20,6 +20,7 @@ import re
 from typing import Awaitable, Callable
 
 from app.integrations import cantina_api
+from app.eventos import clave_orden_evento, extraer_eventos
 from app.logging_setup import log
 
 
@@ -43,6 +44,8 @@ def _anotar_politica_horario_cover(res: dict) -> dict:
     data = res.get("data")
     if isinstance(data, dict) and isinstance(data.get("evento"), dict):
         candidatos.append(data["evento"])
+    if isinstance(data, dict) and isinstance(data.get("eventos"), list):
+        candidatos.extend(v for v in data["eventos"] if isinstance(v, dict))
     for clave in ("reservas", "eventos"):
         valores = res.get(clave)
         if isinstance(valores, list):
@@ -368,9 +371,10 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "name": "consultar_evento",
         "description": (
-            "Si el cliente pregunta por el evento/show de una FECHA concreta, devuelve "
-            "nombre, artista, cover por persona, link de pago o indica que no hay evento "
-            "ese día. Si hay evento con flyer, este se le envía al cliente."
+            "Si el cliente pregunta por eventos/shows de una FECHA concreta, devuelve "
+            "todos los eventos registrados para ese día, diferenciándolos por hora_inicio "
+            "cuando exista; incluye artista, cover por persona y link de pago si aplican. "
+            "Si hay flyer para la fecha, este se le envía al cliente."
         ),
         "input_schema": {
             "type": "object",
@@ -674,6 +678,16 @@ async def handler_consultar_evento(args: dict, ctx: dict) -> dict:
     fecha = args.get("fecha")
     res = await cantina_api.consultar_evento(fecha)
     if isinstance(res, dict) and res.get("ok") and fecha:
+        eventos = extraer_eventos(res)
+        if eventos:
+            eventos.sort(key=clave_orden_evento)
+            res["eventos"] = eventos
+            res["total_eventos"] = len(eventos)
+            if len(eventos) > 1:
+                res["nota_bot"] = (
+                    "Hay varios eventos registrados para esta fecha. Menciona "
+                    "todos, diferenciándolos por hora_inicio si está disponible."
+                )
         # Marca la fecha para que el flow envíe el flyer (si existe).
         ctx["flyer_evento_fecha"] = fecha
         # Descripción local del evento (el backend no la guarda).
@@ -700,10 +714,12 @@ async def handler_proximos_eventos(args: dict, ctx: dict) -> dict:
     evs = data.get("eventos") if isinstance(data, dict) else (data if isinstance(data, list) else [])
     proximos = [
         {"fecha": e.get("fecha"), "nombre": e.get("nombre"), "artista": e.get("artista"),
-         "tiene_cover": e.get("tiene_cover"), "valor_cover": e.get("valor_cover")}
+         "hora_inicio": e.get("hora_inicio"), "hora_fin": e.get("hora_fin"),
+         "tiene_cover": e.get("tiene_cover"), "valor_cover": e.get("valor_cover"),
+         "link_pago": e.get("link_pago")}
         for e in (evs or []) if isinstance(e, dict) and str(e.get("fecha") or "") >= hoy
     ]
-    proximos.sort(key=lambda e: str(e.get("fecha") or ""))
+    proximos.sort(key=clave_orden_evento)
     return _anotar_politica_horario_cover({
         "ok": True,
         "eventos": proximos[:10],

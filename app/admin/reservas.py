@@ -16,6 +16,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.admin._shell import ICON_SPRITE, SHELL_STYLES, THEME_TOGGLE_JS, sidebar_html
+from app.eventos import extraer_eventos, resumen_eventos
 from app.integrations import cantina_api
 from app.logging_setup import log
 
@@ -72,9 +73,9 @@ async def vista(request: Request, fecha: str = ""):
             partes.append(f"{resumen.get('total_personas')} personas")
         if resumen.get("covers_pendientes"):
             partes.append(f"{resumen.get('covers_pendientes')} cover pend.")
-        ev = resumen.get("evento")
-        if isinstance(ev, dict) and ev.get("nombre"):
-            partes.append(f"🎤 {ev.get('nombre')}")
+        eventos_txt = resumen_eventos(extraer_eventos(resumen))
+        if eventos_txt:
+            partes.append(f"🎤 {eventos_txt}")
         rsum = " · ".join(partes)
 
     # Filas de reservas

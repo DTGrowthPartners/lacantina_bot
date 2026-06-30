@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from app.admin._shell import ICON_SPRITE, SHELL_STYLES, THEME_TOGGLE_JS, sidebar_html
 from app.config import get_settings
+from app.eventos import clave_orden_evento, etiqueta_hora, extraer_eventos
 from app.integrations import cantina_api
 from app.logging_setup import log
 
@@ -49,20 +50,6 @@ def flyer_path(fecha: str) -> Path | None:
     return None
 
 
-def _eventos_de(resp: dict) -> list[dict]:
-    if not isinstance(resp, dict) or not resp.get("ok", True):
-        return []
-    data = resp.get("data", resp)
-    if isinstance(data, dict):
-        evs = data.get("eventos")
-        if isinstance(evs, list):
-            return [e for e in evs if isinstance(e, dict)]
-        # respuesta de un solo evento
-        if data.get("nombre") or data.get("fecha"):
-            return [data]
-    return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
-
-
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 async def vista(request: Request):
@@ -72,8 +59,8 @@ async def vista(request: Request):
     error = ""
     eventos: list[dict] = []
     try:
-        eventos = _eventos_de(await cantina_api.listar_eventos())
-        eventos.sort(key=lambda e: str(e.get("fecha") or ""))
+        eventos = extraer_eventos(await cantina_api.listar_eventos())
+        eventos.sort(key=clave_orden_evento)
     except Exception as e:
         error = str(e)[:200]
         log.warning("admin.eventos.listar_fail", error=error)
@@ -82,6 +69,7 @@ async def vista(request: Request):
     cards = []
     for e in eventos:
         fecha = str(e.get("fecha") or "")
+        hora = etiqueta_hora(e)
         nombre = html.escape(str(e.get("nombre") or "Evento"))
         artista = html.escape(str(e.get("artista") or ""))
         cover = e.get("valor_cover")
@@ -107,6 +95,8 @@ async def vista(request: Request):
         fe = html.escape(fecha)
         data_attrs = (
             f'data-fecha="{fe}" '
+            f'data-horainicio="{html.escape(str(e.get("hora_inicio") or ""))}" '
+            f'data-horafin="{html.escape(str(e.get("hora_fin") or ""))}" '
             f'data-nombre="{html.escape(str(e.get("nombre") or ""))}" '
             f'data-artista="{html.escape(str(e.get("artista") or ""))}" '
             f'data-cover="{html.escape(cover_val)}" '
@@ -118,7 +108,7 @@ async def vista(request: Request):
         <div class="ev-card {'ev-pasada' if pasada else ''}" {data_attrs}>
           {flyer_html}
           <div class="ev-body">
-            <div class="ev-fecha">📅 {fe}{' · (pasado)' if pasada else ''}</div>
+            <div class="ev-fecha">📅 {fe}{f' · {html.escape(hora)}' if hora else ''}{' · (pasado)' if pasada else ''}</div>
             <div class="ev-nombre">{nombre}</div>
             {f'<div class="ev-artista">🎤 {artista}</div>' if artista else ''}
             <div class="ev-cover">{html.escape(cover_txt)}</div>
@@ -184,6 +174,8 @@ async def crear(
     fecha: str = Form(...),
     nombre: str = Form(...),
     artista: str = Form(""),
+    hora_inicio: str = Form(""),
+    hora_fin: str = Form(""),
     valor_cover: str = Form(""),
     link_pago: str = Form(""),
     tiene_cover: str = Form(""),
@@ -196,6 +188,10 @@ async def crear(
     payload: dict = {"fecha": fecha, "nombre": nombre.strip(), "tiene_cover": cover_on}
     if artista.strip():
         payload["artista"] = artista.strip()
+    if hora_inicio.strip():
+        payload["hora_inicio"] = hora_inicio.strip()
+    if hora_fin.strip():
+        payload["hora_fin"] = hora_fin.strip()
     if valor_cover.strip():
         try:
             payload["valor_cover"] = int(re_int(valor_cover))
@@ -338,6 +334,8 @@ __ICON_SPRITE__
       <form method="POST" action="/admin/eventos/crear" enctype="multipart/form-data" id="ev-form">
         <div class="form-grid">
           <div><label>Fecha</label><input type="date" name="fecha" value="{{hoy}}" required/></div>
+          <div><label>Hora inicio</label><input type="time" name="hora_inicio"/></div>
+          <div><label>Hora fin</label><input type="time" name="hora_fin"/></div>
           <div><label>Nombre del evento</label><input name="nombre" required placeholder="Ej: Noche de Carin León"/></div>
           <div><label>Artista</label><input name="artista" placeholder="Cantante / show"/></div>
           <div><label>Valor cover (COP)</label><input name="valor_cover" inputmode="numeric" placeholder="Ej: 50000"/></div>
@@ -365,6 +363,8 @@ function editarEvento(btn){
   var c = btn.closest('.ev-card'); if(!c) return;
   var f = document.getElementById('ev-form');
   f.fecha.value        = c.dataset.fecha || '';
+  f.hora_inicio.value  = c.dataset.horainicio || '';
+  f.hora_fin.value     = c.dataset.horafin || '';
   f.nombre.value       = c.dataset.nombre || '';
   f.artista.value      = c.dataset.artista || '';
   f.valor_cover.value  = c.dataset.cover || '';

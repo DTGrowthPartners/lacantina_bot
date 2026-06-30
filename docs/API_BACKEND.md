@@ -45,7 +45,8 @@ Devuelve TODO el contexto del día:
 
 | Campo | Función |
 |-------|---------|
-| `evento` (or `null`) | `{nombre, artista, tiene_cover, valor_cover, link_pago}`. |
+| `evento` (or `null`) | Evento principal/compatibilidad: `{nombre, artista, hora_inicio, hora_fin, tiene_cover, valor_cover, link_pago}`. |
+| `eventos[]` | Lista completa de eventos de la fecha. Puede haber hasta 2 eventos por día diferenciados por `hora_inicio`. |
 | `plano_url` | Foto del plano. |
 | `ocupacion.ocupadas[]` / `libres[]` | Mapa real **sin filtrar**. |
 | `mesas_disponibles[]` + `total_disponibles` | **Filtrado** por capacidad máxima. **Úsalo después de tener el # personas.** |
@@ -120,8 +121,8 @@ Mínimo de consumo $1.000.000. 1 reserva por sala por día, máx 10p.
 
 | Método | Ruta | Función |
 |--------|------|---------|
-| GET | `/api/eventos?fecha=YYYY-MM-DD` | Evento del día. |
-| POST | `/api/eventos` | Crear/actualizar (`fecha`, `nombre` obligatorios; `artista`, `tiene_cover`, `valor_cover`, `link_pago`). |
+| GET | `/api/eventos?fecha=YYYY-MM-DD` | Eventos del día (`evento` principal + `eventos[]`). |
+| POST | `/api/eventos` | Crear/actualizar (`fecha`, `nombre` obligatorios; `hora_inicio`, `hora_fin`, `artista`, `tiene_cover`, `valor_cover`, `link_pago`). |
 | DELETE | `/api/eventos/:fecha` | Apagar modo evento (las reservas se conservan). |
 
 ### Resumen del día (equipo)

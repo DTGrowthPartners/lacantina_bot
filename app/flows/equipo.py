@@ -31,6 +31,7 @@ from app.config import get_settings
 from app.db.models import AlertaFabio, Cliente, Conversacion
 from app.db.repos import get_or_create_cliente, guardar_conversacion
 from app.equipo.directorio import Miembro
+from app.eventos import etiqueta_hora
 from app.logging_setup import log
 from app.menu_media import MENU_URL, imagenes_menu, pide_imagen_menu
 from app.whapi.client import (
@@ -248,6 +249,7 @@ def _formatear_eventos_mes(res: dict, mes: str) -> str:
     lineas = [f"*Eventos registrados para {mes}:*"]
     for e in eventos:
         fecha = str(e.get("fecha") or "?")
+        hora = etiqueta_hora(e)
         nombre = str(e.get("nombre") or "Evento")
         artista = str(e.get("artista") or "").strip()
         tiene_cover = bool(e.get("tiene_cover"))
@@ -261,7 +263,10 @@ def _formatear_eventos_mes(res: dict, mes: str) -> str:
             cover_txt = "Con cover"
         else:
             cover_txt = "Entrada libre"
-        detalle = f"{fecha} - {nombre}"
+        detalle = f"{fecha}"
+        if hora:
+            detalle += f" {hora}"
+        detalle += f" - {nombre}"
         if artista:
             detalle += f" ({artista})"
         lineas.append(f"- {detalle} · {cover_txt}")

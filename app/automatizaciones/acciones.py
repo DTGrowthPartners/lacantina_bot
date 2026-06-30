@@ -19,6 +19,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.eventos import etiqueta_hora, extraer_eventos
 from app.integrations import cantina_api
 from app.logging_setup import log
 from app.notif_equipo import notificar_equipo
@@ -188,19 +189,26 @@ async def accion_pre_evento(session: AsyncSession, params: dict) -> dict:
     """
     fecha = params.get("fecha") or _hoy()
     ev = await cantina_api.consultar_evento(fecha)
-    ev_payload = _payload(ev)
-    tiene_evento = bool(ev_payload) and (ev_payload.get("nombre") or ev_payload.get("evento"))
-    if not (isinstance(ev, dict) and ev.get("ok", False) and tiene_evento):
+    eventos = extraer_eventos(ev)
+    if not (isinstance(ev, dict) and ev.get("ok", False) and eventos):
         return {"ok": True, "skip": True, "razon": "sin evento hoy"}
 
     reservas = _reservas_lista(await cantina_api.listar_reservas(fecha))
     n_reservas = len(reservas)
-    nombre_ev = ev_payload.get("nombre") or ev_payload.get("evento") or "Evento"
-    cover = ev_payload.get("valor_cover")
+    lineas_eventos = []
+    for evento in eventos:
+        nombre_ev = evento.get("nombre") or evento.get("evento") or "Evento"
+        hora = etiqueta_hora(evento)
+        cover = evento.get("valor_cover")
+        detalle = f"- {hora + ' · ' if hora else ''}{nombre_ev}"
+        if cover:
+            detalle += f" · Cover: ${cover} por persona"
+        lineas_eventos.append(detalle)
     mensaje = (
-        f"🎤 *Hoy hay evento: {nombre_ev}*\n"
+        f"🎤 *Hoy hay evento{'s' if len(eventos) > 1 else ''}*\n"
         f"Fecha: {fecha}\n"
-        + (f"Cover: ${cover} por persona\n" if cover else "")
+        + "\n".join(lineas_eventos)
+        + "\n"
         + f"Reservas registradas: {n_reservas}\n\n"
         f"Preparen todo. Para el detalle usen el resumen del día."
     )

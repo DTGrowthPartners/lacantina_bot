@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.admin._shell import sidebar_html
 from app.db.models import AlertaFabio, Conversacion
 from app.db.session import get_session
+from app.eventos import extraer_eventos, resumen_eventos
 from app.integrations import cantina_api
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -108,7 +109,7 @@ async def dashboard_json(
     resumen = await cantina_api.resumen_dia(fecha_hoy)
     if isinstance(resumen, dict) and resumen.get("ok"):
         p = resumen.get("data") if isinstance(resumen.get("data"), dict) else resumen
-        ev = p.get("evento")
+        eventos = extraer_eventos(p)
         reservas_list = [
             {
                 "id": r.get("id"),
@@ -129,7 +130,7 @@ async def dashboard_json(
                 "mesas_totales": p.get("mesas_totales"),
                 "total_personas": p.get("total_personas"),
                 "covers_pendientes": p.get("covers_pendientes"),
-                "evento": (ev.get("nombre") if isinstance(ev, dict) else None),
+                "evento": resumen_eventos(eventos),
             },
             "reservas": reservas_list,
         }

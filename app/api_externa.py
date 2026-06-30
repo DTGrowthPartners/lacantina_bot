@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import AlertaFabio, Conversacion
 from app.db.session import get_session
+from app.eventos import extraer_eventos, resumen_eventos
 from app.integrations import cantina_api
 from app.logging_setup import log
 from app.webhooks_salientes import emitir_evento
@@ -171,14 +172,14 @@ async def stats(_: None = Depends(auth), session: AsyncSession = Depends(get_ses
         resumen = await cantina_api.resumen_dia(hoy.date().isoformat())
         if isinstance(resumen, dict) and resumen.get("ok"):
             p = resumen.get("data") if isinstance(resumen.get("data"), dict) else resumen
-            ev = p.get("evento")
+            eventos = extraer_eventos(p)
             reservas = {
                 "ok": True,
                 "mesas_ocupadas": p.get("mesas_ocupadas"),
                 "mesas_totales": p.get("mesas_totales"),
                 "total_personas": p.get("total_personas"),
                 "covers_pendientes": p.get("covers_pendientes"),
-                "evento": (ev.get("nombre") if isinstance(ev, dict) else None),
+                "evento": resumen_eventos(eventos),
             }
     except Exception as e:
         reservas = {"ok": False, "error": str(e)[:160]}

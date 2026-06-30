@@ -17,6 +17,7 @@ from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
 from app.config import get_settings
+from app.eventos import clave_orden_evento, extraer_eventos
 from app.integrations import cantina_api
 from app.logging_setup import log
 
@@ -287,8 +288,9 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
     {
         "name": "crear_evento",
         "description": (
-            "Crea/actualiza el evento de un día (artista, cover, link de pago, "
-            "descripción). Solo el equipo. **Si el equipo adjuntó una imagen en el "
+            "Crea/actualiza un evento de un día (hora_inicio, artista, cover, "
+            "link de pago, descripción). Puede haber hasta 2 eventos el mismo día, "
+            "diferenciados por hora_inicio. Solo el equipo. **Si el equipo adjuntó una imagen en el "
             "mismo mensaje, se guarda como FLYER del evento automáticamente** y el "
             "bot se la enviará a los clientes que pregunten por ese día."
         ),
@@ -298,6 +300,8 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
                 "fecha": {"type": "string", "description": "YYYY-MM-DD"},
                 "nombre": {"type": "string"},
                 "artista": {"type": "string"},
+                "hora_inicio": {"type": "string", "description": "Hora en formato HH:MM, ej. 20:00"},
+                "hora_fin": {"type": "string", "description": "Hora final opcional en formato HH:MM"},
                 "tiene_cover": {"type": "boolean"},
                 "valor_cover": {"type": "integer", "description": "COP por persona"},
                 "link_pago": {"type": "string", "description": "Link de la pasarela de pago"},
@@ -595,24 +599,6 @@ def _normalizar_mes(raw: str | None) -> tuple[str | None, str | None]:
     return None, "mes debe venir en formato YYYY-MM"
 
 
-def _extraer_eventos(resp: dict) -> list[dict]:
-    if not isinstance(resp, dict) or not resp.get("ok", True):
-        return []
-    data = resp.get("data", resp)
-    if isinstance(data, dict):
-        eventos = data.get("eventos")
-        if isinstance(eventos, list):
-            return [e for e in eventos if isinstance(e, dict)]
-        evento = data.get("evento")
-        if isinstance(evento, dict):
-            return [evento]
-        if data.get("fecha") or data.get("nombre"):
-            return [data]
-    if isinstance(data, list):
-        return [e for e in data if isinstance(e, dict)]
-    return []
-
-
 async def handler_eventos_del_mes(args: dict, ctx: dict) -> dict:
     mes, error = _normalizar_mes(args.get("mes"))
     if error:
@@ -621,10 +607,10 @@ async def handler_eventos_del_mes(args: dict, ctx: dict) -> dict:
     if not isinstance(res, dict) or not res.get("ok", False):
         return res
     eventos = [
-        e for e in _extraer_eventos(res)
+        e for e in extraer_eventos(res)
         if str(e.get("fecha") or "").startswith(mes or "")
     ]
-    eventos.sort(key=lambda e: str(e.get("fecha") or ""))
+    eventos.sort(key=clave_orden_evento)
     return {
         "ok": True,
         "mes": mes,
