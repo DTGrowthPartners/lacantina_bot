@@ -331,6 +331,35 @@ def _correccion_nombre_reserva_pedida(texto: str | None) -> dict | None:
     return {"reserva_id": int(id_match.group(1)), "nombre_cliente": nombre}
 
 
+def _pide_corregir_ultima_alerta_nombre(texto: str | None) -> bool:
+    limpio = " ".join((texto or "").split())
+    if not limpio:
+        return False
+    return bool(re.search(
+        r"\b(corr[ií]g(?:e|ela|elo|elo)?|corrige(?:la|lo)?|arregla(?:la|lo)?|"
+        r"actual[ií]za(?:la|lo)?)\b",
+        limpio,
+        re.IGNORECASE,
+    ))
+
+
+def _correccion_nombre_desde_historial(
+    instruccion: str | None,
+    historial: list[Conversacion],
+) -> dict | None:
+    directa = _correccion_nombre_reserva_pedida(instruccion)
+    if directa:
+        return directa
+    if not _pide_corregir_ultima_alerta_nombre(instruccion):
+        return None
+    for mensaje in reversed(historial):
+        contenido = getattr(mensaje, "contenido", None) or ""
+        correccion = _correccion_nombre_reserva_pedida(contenido)
+        if correccion:
+            return correccion
+    return None
+
+
 async def procesar_mensaje_equipo(
     *,
     session: AsyncSession,
@@ -594,7 +623,7 @@ async def procesar_mensaje_equipo(
         "video_mime": video_mime,
     }
 
-    correccion_nombre = _correccion_nombre_reserva_pedida(instruccion)
+    correccion_nombre = _correccion_nombre_desde_historial(instruccion, historial_db)
     if correccion_nombre and not imagen_b64 and msg.tipo == "texto":
         result = await HANDLERS_EQUIPO["actualizar_reserva"](correccion_nombre, ctx_tool)
         if isinstance(result, dict) and result.get("ok"):

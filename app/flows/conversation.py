@@ -139,10 +139,12 @@ def _parece_frase_no_nombre(valor: str | None) -> bool:
         return True
     patrones = (
         r"\b(?:mesa|mesas|puesto|puestos|silla|zona|cantina|vip|rumbero|"
-        r"barra|tarima|pantalla|bano|banos|esquina)\b",
+        r"barra|tarima|pantalla|bano|banos|esquina|ubicacion|direccion|"
+        r"location|maps?|mapa)\b",
         r"\b(?:quedariamos|quedamos|quedar|queda|quedaria)\b",
         r"\b(?:dime|digame|me\s+dice|me\s+dices|me\s+indica|"
-        r"indicame|confirmame)\b",
+        r"indicame|confirmame|puedes\s+mandarme|puede\s+mandarme|"
+        r"mandame|enviame|env[ií]ame|pasame|p[aá]same)\b",
         r"\b(?:quiero|queremos|puedo|podemos|podriamos|seria)\b",
         r"^(?:y\s+)?(?:es\s+)?(?:en|al|a\s+la|a\s+el)\b",
         r"\b(?:cerca|junto|pegad[ao]s?|al\s+lado|frente)\b",

@@ -78,6 +78,25 @@ class NombreReservaTests(unittest.TestCase):
 
         self.assertIsNone(nombre)
 
+    def test_no_toma_pedido_ubicacion_como_nombre(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(
+                direccion="inbound",
+                contenido="Puedes mandarme la ubicación",
+            ),
+        ]
+
+        nombre = _nombre_reserva_explicito(
+            "Puedes mandarme la ubicación",
+            historial,
+        )
+
+        self.assertIsNone(nombre)
+
     def test_limpia_por_favor_antes_del_nombre(self):
         historial = [
             SimpleNamespace(
@@ -217,6 +236,31 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
                     "fecha": "2026-07-03",
                     "mesa_id": 2,
                     "nombre_cliente": "Y me dice en qué puesto quedaríamos",
+                    "num_personas": 3,
+                },
+                ctx,
+            )
+
+        self.assertTrue(result["falta_nombre_confirmado"])
+        crear.assert_not_awaited()
+
+    async def test_bloquea_reserva_si_nombre_confirmado_pide_ubicacion(self):
+        ctx = {
+            "cliente_numero": "+573002235156",
+            "nombre_reserva_confirmado": "Puedes mandarme la ubicación",
+            "outbox": [],
+        }
+
+        with patch.object(
+            tools.cantina_api,
+            "crear_reserva",
+            new=AsyncMock(),
+        ) as crear:
+            result = await tools.handler_crear_reserva(
+                {
+                    "fecha": "2026-07-03",
+                    "mesa_id": 3,
+                    "nombre_cliente": "DIEGO CARRILLO RAMOS",
                     "num_personas": 3,
                 },
                 ctx,

@@ -1,7 +1,10 @@
 import unittest
 
 from app.claude.tools_equipo import HANDLERS_EQUIPO, TOOL_DEFINITIONS_EQUIPO
-from app.flows.equipo import _correccion_nombre_reserva_pedida
+from app.flows.equipo import (
+    _correccion_nombre_desde_historial,
+    _correccion_nombre_reserva_pedida,
+)
 
 
 class CorreccionesEquipoTests(unittest.TestCase):
@@ -28,3 +31,26 @@ class CorreccionesEquipoTests(unittest.TestCase):
 
         self.assertIn("consultar_historial_cliente", nombres)
         self.assertIn("consultar_historial_cliente", HANDLERS_EQUIPO)
+
+    def test_corrigela_usa_ultima_alerta_con_nombre_correcto(self):
+        historial = [
+            type("Msg", (), {
+                "contenido": (
+                    "Reserva ID 224 (mesa 2, 2026-07-03) quedó registrada "
+                    'con el nombre incorrecto "Y me dice en qué puesto quedaríamos". '
+                    "El nombre correcto es Angie Rodríguez Herrera. Por favor corregir manualmente."
+                )
+            })(),
+            type("Msg", (), {
+                "contenido": (
+                    "Reserva ID 230 (mesa 3, 2026-07-03, 3 personas, tel +573002235156) "
+                    'quedó registrada con el nombre incorrecto "Puedes mandarme la ubicación". '
+                    "El nombre correcto es DIEGO CARRILLO RAMOS. Por favor corregir manualmente."
+                )
+            })(),
+        ]
+
+        self.assertEqual(
+            _correccion_nombre_desde_historial("corrigela", historial),
+            {"reserva_id": 230, "nombre_cliente": "DIEGO CARRILLO RAMOS"},
+        )
