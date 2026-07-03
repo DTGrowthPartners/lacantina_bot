@@ -205,6 +205,42 @@ class NombreReservaTests(unittest.TestCase):
 
         self.assertIsNone(nombre)
 
+    def test_recupera_nombre_previo_si_ultimo_mensaje_no_es_nombre(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="DIEGO CARRILLO RAMOS"),
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿Me confirmas exactamente cómo quieres que quede la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="Puedes mandarme la ubicación"),
+        ]
+
+        nombre = _nombre_reserva_explicito("Puedes mandarme la ubicación", historial)
+
+        self.assertEqual(nombre, "DIEGO CARRILLO RAMOS")
+
+    def test_recupera_nombre_previo_si_ultimo_mensaje_es_confirmacion(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="Melissa Urueta"),
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿Me confirmas exactamente cómo quieres que quede la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="Me confirmas"),
+        ]
+
+        nombre = _nombre_reserva_explicito("Me confirmas", historial)
+
+        self.assertEqual(nombre, "Melissa Urueta")
+
 
 class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_bloquea_reserva_si_solo_hay_nombre_inferido(self):

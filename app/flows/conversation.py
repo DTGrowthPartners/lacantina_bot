@@ -38,6 +38,7 @@ from app.db.repos import bot_activo, guardar_conversacion, ultimos_mensajes
 from app.event_media import MIME, flyer_path_evento
 from app.logging_setup import log
 from app.menu_media import MENU_URL, pide_menu
+from app.nombres import limpiar_nombre_reserva
 from app.utils.humanizer import (
     dentro_horario,
     proxima_hora_apertura,
@@ -97,66 +98,7 @@ def _asegurar_escalacion_humana(
 
 def _limpiar_nombre_reserva(valor: str | None) -> str | None:
     """Normaliza un nombre que el cliente dio expresamente para la reserva."""
-    nombre = re.sub(r"\s+", " ", (valor or "")).strip(" \t\r\n.,;:!?\"'")
-    nombre = re.sub(
-        r"^(?:por\s+favor|porfa|porfis|porfi)\s+",
-        "",
-        nombre,
-        flags=re.IGNORECASE,
-    ).strip(" \t\r\n.,;:!?\"'")
-    nombre = re.sub(
-        r"^(?:mi nombre(?: es)?|soy)\s+",
-        "",
-        nombre,
-        flags=re.IGNORECASE,
-    ).strip()
-    nombre = re.sub(
-        r"\s+(?:por favor|gracias|porfa|por favor gracias|est[aá] bien|"
-        r"est[aá] correcto|as[ií] est[aá] bien)$",
-        "",
-        nombre,
-        flags=re.IGNORECASE,
-    ).strip()
-    if not (2 <= len(nombre) <= 80):
-        return None
-    if len(nombre.split()) > 8 or not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", nombre):
-        return None
-    if nombre.casefold() in {
-        "si", "sí", "no", "ok", "dale", "listo", "gracias",
-        "por favor", "porfa", "correcto", "confirmo", "perfecto",
-    }:
-        return None
-    if _parece_frase_no_nombre(nombre):
-        return None
-    return nombre
-
-
-def _parece_frase_no_nombre(valor: str | None) -> bool:
-    texto = _normalizar_texto_nombre(valor)
-    if not texto:
-        return True
-    if re.search(r"[¿?]", valor or ""):
-        return True
-    patrones = (
-        r"\b(?:mesa|mesas|puesto|puestos|silla|zona|cantina|vip|rumbero|"
-        r"barra|tarima|pantalla|bano|banos|esquina|ubicacion|direccion|"
-        r"location|maps?|mapa)\b",
-        r"\b(?:quedariamos|quedamos|quedar|queda|quedaria)\b",
-        r"\b(?:dime|digame|me\s+dice|me\s+dices|me\s+indica|"
-        r"indicame|confirmame|confirmar?me|me\s+confirmas?|me\s+confirma|"
-        r"puedes\s+confirmar?me|puede\s+confirmar?me|puedes\s+mandarme|puede\s+mandarme|"
-        r"mandame|enviame|env[ií]ame|pasame|p[aá]same)\b",
-        r"\b(?:quiero|queremos|puedo|podemos|podriamos|seria)\b",
-        r"^(?:y\s+)?(?:es\s+)?(?:en|al|a\s+la|a\s+el)\b",
-        r"\b(?:cerca|junto|pegad[ao]s?|al\s+lado|frente)\b",
-    )
-    return any(re.search(patron, texto, flags=re.IGNORECASE) for patron in patrones)
-
-
-def _normalizar_texto_nombre(valor: str | None) -> str:
-    texto = (valor or "").casefold()
-    reemplazos = str.maketrans("áéíóúüñ", "aeiouun")
-    return texto.translate(reemplazos)
+    return limpiar_nombre_reserva(valor)
 
 
 def _nombre_marcado_en_texto(texto: str | None) -> str | None:
@@ -214,7 +156,9 @@ def _nombre_reserva_explicito(mensaje_actual: str, historial_db: list) -> str | 
     )
     pregunta = getattr(anterior, "contenido", "") if anterior else ""
     if _pregunta_nombre_reserva(pregunta) and "\n" not in texto and len(texto.split()) <= 8:
-        return _limpiar_nombre_reserva(texto)
+        nombre = _limpiar_nombre_reserva(texto)
+        if nombre:
+            return nombre
 
     # El cliente puede dar el nombre y luego responder "Correcto" a una
     # confirmación. Recuperamos el último nombre explícito de ESTE trámite, no

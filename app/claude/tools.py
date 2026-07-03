@@ -23,6 +23,7 @@ from app.integrations import cantina_api
 from app.eventos import clave_orden_evento, extraer_eventos
 from app.event_media import leer_descripcion_evento
 from app.logging_setup import log
+from app.nombres import limpiar_nombre_reserva, validar_nombre_reserva
 
 
 _POLITICA_HORARIO_COVER = (
@@ -87,59 +88,22 @@ def _normalizar_nombre(valor: str | None) -> str:
     return re.sub(r"\s+", " ", (valor or "")).strip()
 
 
-def _normalizar_texto_nombre(valor: str | None) -> str:
-    texto = (valor or "").casefold()
-    reemplazos = str.maketrans("áéíóúüñ", "aeiouun")
-    return texto.translate(reemplazos)
-
-
-def _parece_frase_no_nombre(valor: str | None) -> bool:
-    original = valor or ""
-    texto = _normalizar_texto_nombre(original)
-    if not texto:
-        return True
-    if re.search(r"[¿?]", original):
-        return True
-    patrones = (
-        r"\b(?:mesa|mesas|puesto|puestos|silla|zona|cantina|vip|rumbero|"
-        r"barra|tarima|pantalla|bano|banos|esquina|ubicacion|direccion|"
-        r"location|maps?|mapa)\b",
-        r"\b(?:quedariamos|quedamos|quedar|queda|quedaria)\b",
-        r"\b(?:dime|digame|me\s+dice|me\s+dices|me\s+indica|"
-        r"indicame|confirmame|confirmar?me|me\s+confirmas?|me\s+confirma|"
-        r"puedes\s+confirmar?me|puede\s+confirmar?me|puedes\s+mandarme|puede\s+mandarme|"
-        r"mandame|enviame|env[ií]ame|pasame|p[aá]same)\b",
-        r"\b(?:quiero|queremos|puedo|podemos|podriamos|seria)\b",
-        r"^(?:y\s+)?(?:es\s+)?(?:en|al|a\s+la|a\s+el)\b",
-        r"\b(?:cerca|junto|pegad[ao]s?|al\s+lado|frente)\b",
-    )
-    return any(re.search(patron, texto, flags=re.IGNORECASE) for patron in patrones)
-
-
-_NOMBRES_RESERVA_INVALIDOS = {
-    "si", "sí", "no", "ok", "dale", "listo", "gracias",
-    "por favor", "porfa", "porfis", "porfi",
-    "correcto", "confirmo", "perfecto",
-}
-
-
 def _nombre_reserva_sospechoso(valor: str | None) -> bool:
-    nombre = _normalizar_nombre(valor).casefold()
-    return not nombre or nombre in _NOMBRES_RESERVA_INVALIDOS or _parece_frase_no_nombre(nombre)
+    return not validar_nombre_reserva(valor).es_nombre
 
 
 def _nombre_reserva_basura(valor: str | None) -> bool:
-    nombre = _normalizar_nombre(valor).casefold()
-    return bool(nombre) and (nombre in _NOMBRES_RESERVA_INVALIDOS or _parece_frase_no_nombre(nombre))
+    return bool(_normalizar_nombre(valor)) and not validar_nombre_reserva(valor).es_nombre
 
 
 def _validar_nombre_reserva(args: dict, ctx: dict) -> dict | None:
     """Impide usar el pushname de WhatsApp o un nombre inferido por el modelo."""
-    confirmado = _normalizar_nombre(ctx.get("nombre_reserva_confirmado"))
-    if _nombre_reserva_sospechoso(confirmado):
+    validacion = validar_nombre_reserva(ctx.get("nombre_reserva_confirmado"))
+    if not validacion.es_nombre:
         log.warning(
             "tools.reserva.nombre_no_confirmado",
             cliente=ctx.get("cliente_numero"),
+            razon=validacion.razon,
         )
         return {
             "ok": False,
@@ -151,7 +115,7 @@ def _validar_nombre_reserva(args: dict, ctx: dict) -> dict | None:
                 "crear la reserva en este turno."
             ),
         }
-    args["nombre_cliente"] = confirmado
+    args["nombre_cliente"] = validacion.nombre_limpio
     return None
 
 
@@ -175,8 +139,8 @@ async def _autocorregir_nombre_reserva(
     if not (isinstance(res, dict) and res.get("ok")):
         return res
 
-    nombre_correcto = _normalizar_nombre(ctx.get("nombre_reserva_confirmado"))
-    if _nombre_reserva_sospechoso(nombre_correcto):
+    nombre_correcto = limpiar_nombre_reserva(ctx.get("nombre_reserva_confirmado"))
+    if not nombre_correcto:
         return res
 
     reservas = _reservas_en_respuesta(res)
