@@ -143,7 +143,8 @@ def _parece_frase_no_nombre(valor: str | None) -> bool:
         r"location|maps?|mapa)\b",
         r"\b(?:quedariamos|quedamos|quedar|queda|quedaria)\b",
         r"\b(?:dime|digame|me\s+dice|me\s+dices|me\s+indica|"
-        r"indicame|confirmame|puedes\s+mandarme|puede\s+mandarme|"
+        r"indicame|confirmame|confirmar?me|me\s+confirmas?|me\s+confirma|"
+        r"puedes\s+confirmar?me|puede\s+confirmar?me|puedes\s+mandarme|puede\s+mandarme|"
         r"mandame|enviame|env[ií]ame|pasame|p[aá]same)\b",
         r"\b(?:quiero|queremos|puedo|podemos|podriamos|seria)\b",
         r"^(?:y\s+)?(?:es\s+)?(?:en|al|a\s+la|a\s+el)\b",

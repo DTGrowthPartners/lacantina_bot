@@ -97,6 +97,19 @@ class NombreReservaTests(unittest.TestCase):
 
         self.assertIsNone(nombre)
 
+    def test_no_toma_me_confirmas_como_nombre(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="Me confirmas"),
+        ]
+
+        nombre = _nombre_reserva_explicito("Me confirmas", historial)
+
+        self.assertIsNone(nombre)
+
     def test_limpia_por_favor_antes_del_nombre(self):
         historial = [
             SimpleNamespace(
@@ -262,6 +275,31 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
                     "mesa_id": 3,
                     "nombre_cliente": "DIEGO CARRILLO RAMOS",
                     "num_personas": 3,
+                },
+                ctx,
+            )
+
+        self.assertTrue(result["falta_nombre_confirmado"])
+        crear.assert_not_awaited()
+
+    async def test_bloquea_reserva_si_nombre_confirmado_es_me_confirmas(self):
+        ctx = {
+            "cliente_numero": "+573127549273",
+            "nombre_reserva_confirmado": "Me confirmas",
+            "outbox": [],
+        }
+
+        with patch.object(
+            tools.cantina_api,
+            "crear_reserva",
+            new=AsyncMock(),
+        ) as crear:
+            result = await tools.handler_crear_reserva(
+                {
+                    "fecha": "2026-07-03",
+                    "mesa_id": 28,
+                    "nombre_cliente": "Melissa Urueta",
+                    "num_personas": 4,
                 },
                 ctx,
             )
