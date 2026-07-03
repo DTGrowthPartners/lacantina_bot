@@ -322,6 +322,99 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
         crear.assert_awaited_once()
         self.assertEqual(len(ctx["outbox"]), 1)
 
+    async def test_permite_segunda_mesa_misma_fecha_mismo_telefono(self):
+        ctx = {
+            "cliente_numero": "+573135341582",
+            "nombre_reserva_confirmado": "Stefany Pérez",
+            "outbox": [],
+        }
+        existentes = [{
+            "id": 201,
+            "fecha": "2026-07-03",
+            "mesa_numero": 18,
+            "telefono": "+573135341582",
+            "estado": "confirmada",
+        }]
+        respuesta = {
+            "ok": True,
+            "reserva": {
+                "id": 202,
+                "estado": "confirmada",
+                "mesa_numero": 24,
+                "mesa_zona": "VIP",
+            },
+        }
+
+        with (
+            patch.object(
+                tools.cantina_api,
+                "listar_reservas",
+                new=AsyncMock(return_value={"ok": True, "reservas": existentes}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "crear_reserva",
+                new=AsyncMock(return_value=respuesta),
+            ) as crear,
+        ):
+            result = await tools.handler_crear_reserva(
+                {
+                    "fecha": "2026-07-03",
+                    "mesa_id": 24,
+                    "nombre_cliente": "Stefany Pérez",
+                    "num_personas": 6,
+                },
+                ctx,
+            )
+
+        self.assertTrue(result["ok"])
+        crear.assert_awaited_once()
+        self.assertEqual(crear.await_args.args[0]["mesa_id"], 24)
+        self.assertEqual(crear.await_args.args[0]["telefono"], "+573135341582")
+        self.assertEqual(len(ctx["outbox"]), 1)
+        self.assertIn("*Mesa:* 24", ctx["outbox"][0]["mensaje"])
+
+    async def test_bloquea_segunda_reserva_si_repite_misma_mesa(self):
+        ctx = {
+            "cliente_numero": "+573135341582",
+            "nombre_reserva_confirmado": "Stefany Pérez",
+            "outbox": [],
+        }
+        existentes = [{
+            "id": 201,
+            "fecha": "2026-07-03",
+            "mesa_numero": 18,
+            "telefono": "+573135341582",
+            "estado": "confirmada",
+        }]
+
+        with (
+            patch.object(
+                tools.cantina_api,
+                "listar_reservas",
+                new=AsyncMock(return_value={"ok": True, "reservas": existentes}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "crear_reserva",
+                new=AsyncMock(),
+            ) as crear,
+        ):
+            result = await tools.handler_crear_reserva(
+                {
+                    "fecha": "2026-07-03",
+                    "mesa_id": 18,
+                    "nombre_cliente": "Stefany Pérez",
+                    "num_personas": 8,
+                },
+                ctx,
+            )
+
+        self.assertTrue(result["ya_reservado"])
+        self.assertIn("mesa 18", result["error"])
+        crear.assert_not_awaited()
+        self.assertEqual(ctx["outbox"], [])
+
 
 class CambioMesaTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

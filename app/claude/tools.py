@@ -334,9 +334,9 @@ def _formatear_alerta_cambio_mesa(anterior: dict, nueva: dict, telefono: str) ->
 async def _cliente_ya_reservo(fecha: str | None, telefono: str | None) -> list | None:
     """Mesas que el cliente (por teléfono) YA tiene reservadas esa fecha, o None.
 
-    Evita el bug de reservas duplicadas: si el bot vuelve a 'apartar' tras haber
-    reservado, ve sus propias mesas como ocupadas y crea otra reserva en mesas
-    distintas. Este guardia lo bloquea a nivel de tool.
+    Se usa para evitar repetir la misma mesa por accidente. El negocio sí permite
+    que el mismo cliente tenga otra reserva para la misma fecha si es una mesa
+    distinta.
     """
     if not (fecha and telefono):
         return None
@@ -664,15 +664,18 @@ async def handler_consultar_disponibilidad(args: dict, ctx: dict) -> dict:
                 "`crear_reserva_grupo`) o una SALA PRIVADA. NUNCA digas que no hay "
                 "disponibilidad ni que está lleno."
             )
-        # Si el cliente ya tiene reserva para esta fecha, señalarlo claramente para
-        # que el bot no confunda su propia mesa ocupada con una mesa ajena. 🚫
+        # Si el cliente ya tiene reserva para esta fecha, señalarlo claramente.
+        # Puede pedir una mesa adicional; solo hay que evitar repetir la misma mesa.
         ya = await _cliente_ya_reservo(fecha, ctx.get("cliente_numero"))
         if ya:
             res["reserva_propia"] = ya
             res["nota_reserva_propia"] = (
                 f"ATENCIÓN: este cliente YA tiene reserva confirmada para {fecha} "
-                f"en mesa(s) {ya}. NO ofrezcas más mesas ni digas que están ocupadas: "
-                "confírmale su reserva existente y pregunta si necesita algo más."
+                f"en mesa(s) {ya}. Si está pidiendo OTRA mesa para la misma fecha, "
+                "puedes reservarla siempre que sea una mesa distinta y esté libre. "
+                "Si falta información, pregunta para cuántas personas va esa segunda "
+                "mesa y si queda al mismo nombre o a nombre de otra persona. No escales "
+                "al equipo solo por ser una segunda reserva del mismo teléfono."
             )
     return _anotar_politica_horario_cover(res)
 
@@ -736,11 +739,14 @@ async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
         return error_nombre
     tel = args.get("telefono") or ctx.get("cliente_numero")
     ya = await _cliente_ya_reservo(args.get("fecha"), tel)
-    if ya:
+    mesa_solicitada = args.get("mesa_id")
+    mesas_ya = {str(m) for m in (ya or []) if m is not None}
+    if ya and mesa_solicitada is not None and str(mesa_solicitada) in mesas_ya:
         return {"ok": False, "ya_reservado": True, "mesas": ya,
                 "error": f"Este cliente YA tiene una reserva para {args.get('fecha')} "
-                         f"(mesa(s) {ya}). NO crees otra: confírmale ESA reserva. Si de "
-                         f"verdad necesita una mesa adicional, escala al equipo."}
+                         f"en la mesa {mesa_solicitada}. NO crees otra reserva igual: "
+                         "confírmale esa reserva existente. Si necesita una mesa adicional, "
+                         "pregunta cuál mesa distinta quiere y cuántas personas van."}
     payload = {k: v for k, v in {
         "fecha": args.get("fecha"),
         "mesa_id": args.get("mesa_id"),
@@ -772,11 +778,15 @@ async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
         return error_nombre
     tel = args.get("telefono") or ctx.get("cliente_numero")
     ya = await _cliente_ya_reservo(args.get("fecha"), tel)
-    if ya:
+    mesas_solicitadas = [m for m in (args.get("mesa_numeros") or []) if m is not None]
+    mesas_ya = {str(m) for m in (ya or []) if m is not None}
+    repetidas = [m for m in mesas_solicitadas if str(m) in mesas_ya]
+    if repetidas:
         return {"ok": False, "ya_reservado": True, "mesas": ya,
                 "error": f"Este cliente YA tiene una reserva para {args.get('fecha')} "
-                         f"(mesa(s) {ya}). NO crees otra: confírmale ESA. Si necesita más "
-                         f"mesas, escala al equipo."}
+                         f"en mesa(s) {repetidas}. NO crees otra reserva con las mismas "
+                         "mesas: confírmale la reserva existente o pide mesas distintas "
+                         "para la reserva adicional."}
     payload = {k: v for k, v in {
         "fecha": args.get("fecha"),
         "mesa_numeros": args.get("mesa_numeros") or [],
@@ -809,10 +819,7 @@ async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
     tel = args.get("telefono") or ctx.get("cliente_numero")
     ya = await _cliente_ya_reservo(args.get("fecha"), tel)
     if ya:
-        return {"ok": False, "ya_reservado": True, "mesas": ya,
-                "error": f"Este cliente YA tiene una reserva para {args.get('fecha')} "
-                         f"(mesa(s) {ya}). NO crees otra: confírmale ESA. Si necesita más, "
-                         f"escala al equipo."}
+        args["notas"] = (args.get("notas") or "") or f"Reserva adicional; ya tenía mesa(s) {ya}."
     payload = {k: v for k, v in {
         "fecha": args.get("fecha"),
         "sala_id": args.get("sala_id"),
