@@ -1,5 +1,6 @@
 import unittest
 
+from app.claude.tools_equipo import HANDLERS_EQUIPO, TOOL_DEFINITIONS_EQUIPO
 from app.flows.equipo import _correccion_nombre_reserva_pedida
 
 
@@ -22,3 +23,8 @@ class CorreccionesEquipoTests(unittest.TestCase):
             _correccion_nombre_reserva_pedida("Reserva ID 199 quedó rara, revísala")
         )
 
+    def test_tiene_tool_para_revisar_historial_cliente(self):
+        nombres = {tool["name"] for tool in TOOL_DEFINITIONS_EQUIPO}
+
+        self.assertIn("consultar_historial_cliente", nombres)
+        self.assertIn("consultar_historial_cliente", HANDLERS_EQUIPO)

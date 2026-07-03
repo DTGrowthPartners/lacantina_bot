@@ -126,7 +126,34 @@ def _limpiar_nombre_reserva(valor: str | None) -> str | None:
         "por favor", "porfa", "correcto", "confirmo", "perfecto",
     }:
         return None
+    if _parece_frase_no_nombre(nombre):
+        return None
     return nombre
+
+
+def _parece_frase_no_nombre(valor: str | None) -> bool:
+    texto = _normalizar_texto_nombre(valor)
+    if not texto:
+        return True
+    if re.search(r"[¿?]", valor or ""):
+        return True
+    patrones = (
+        r"\b(?:mesa|mesas|puesto|puestos|silla|zona|cantina|vip|rumbero|"
+        r"barra|tarima|pantalla|bano|banos|esquina)\b",
+        r"\b(?:quedariamos|quedamos|quedar|queda|quedaria)\b",
+        r"\b(?:dime|digame|me\s+dice|me\s+dices|me\s+indica|"
+        r"indicame|confirmame)\b",
+        r"\b(?:quiero|queremos|puedo|podemos|podriamos|seria)\b",
+        r"^(?:y\s+)?(?:es\s+)?(?:en|al|a\s+la|a\s+el)\b",
+        r"\b(?:cerca|junto|pegad[ao]s?|al\s+lado|frente)\b",
+    )
+    return any(re.search(patron, texto, flags=re.IGNORECASE) for patron in patrones)
+
+
+def _normalizar_texto_nombre(valor: str | None) -> str:
+    texto = (valor or "").casefold()
+    reemplazos = str.maketrans("áéíóúüñ", "aeiouun")
+    return texto.translate(reemplazos)
 
 
 def _nombre_marcado_en_texto(texto: str | None) -> str | None:

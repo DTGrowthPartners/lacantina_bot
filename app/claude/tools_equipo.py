@@ -16,7 +16,10 @@ from pathlib import Path
 from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
+
 from app.config import get_settings
+from app.db.models import Cliente, Conversacion
 from app.event_media import guardar_descripcion, guardar_flyer
 from app.eventos import clave_orden_evento, extraer_eventos
 from app.integrations import cantina_api
@@ -434,6 +437,24 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "type": "object",
             "properties": {
                 "telefono": {"type": "string", "description": "Número del cliente, +57..."},
+            },
+            "required": ["telefono"],
+        },
+    },
+    {
+        "name": "consultar_historial_cliente",
+        "description": (
+            "Lee los últimos mensajes guardados del chat de un cliente por teléfono. "
+            "Úsala cuando el equipo diga 'revisa el chat del cliente', 'mira qué "
+            "nombre dio', 'qué dijo el cliente', o cuando haya que corregir una "
+            "reserva con nombre raro revisando la conversación. SÍ tienes acceso al "
+            "historial guardado en la base de datos; no digas que no puedes leerlo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "telefono": {"type": "string", "description": "Número del cliente, +57..."},
+                "limite": {"type": "integer", "description": "Cantidad de mensajes, default 12"},
             },
             "required": ["telefono"],
         },
@@ -999,6 +1020,58 @@ async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
                                 "Confírmalo brevemente en tu texto."}
 
 
+async def handler_consultar_historial_cliente(args: dict, ctx: dict) -> dict:
+    from app.whapi.parser import normalizar_numero
+
+    tel = normalizar_numero((args.get("telefono") or "").strip())
+    if not tel:
+        return {"ok": False, "error": "telefono requerido en formato +57..."}
+    session = ctx.get("session")
+    if session is None:
+        return {"ok": False, "error": "sin sesión de BD"}
+
+    limite = int(args.get("limite") or 12)
+    limite = max(1, min(limite, 30))
+    stmt = (
+        select(Conversacion)
+        .join(Cliente, Cliente.id == Conversacion.cliente_id)
+        .where(Cliente.numero_whatsapp == tel)
+        .order_by(Conversacion.timestamp.desc(), Conversacion.id.desc())
+        .limit(limite)
+    )
+    rows = list(reversed((await session.execute(stmt)).scalars().all()))
+    if not rows:
+        return {
+            "ok": False,
+            "sin_historial": True,
+            "telefono": tel,
+            "error": "No encontré mensajes guardados para ese teléfono.",
+        }
+
+    mensajes = []
+    for row in rows:
+        contenido = (row.contenido or "").strip()
+        if not contenido and row.media_url:
+            contenido = f"[{row.tipo} con media]"
+        mensajes.append({
+            "id": row.id,
+            "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+            "direccion": row.direccion,
+            "tipo": row.tipo,
+            "contenido": contenido[:800],
+        })
+    return {
+        "ok": True,
+        "telefono": tel,
+        "total": len(mensajes),
+        "mensajes": mensajes,
+        "nota": (
+            "Usa estos mensajes para inferir el nombre real si el cliente lo dijo "
+            "claramente. Si no aparece, pregunta al cliente con avisar_cliente."
+        ),
+    }
+
+
 async def handler_enviar_plano_espacio(args: dict, ctx: dict) -> dict:
     """Manda el plano del salón con mesas reservadas marcadas en rojo."""
     if ctx.get("_plano_enviado"):
@@ -1101,6 +1174,7 @@ HANDLERS_EQUIPO: dict[str, Handler] = {
     "listar_grupos_whatsapp": handler_listar_grupos_whatsapp,
     "enviar_mensaje_grupo": handler_enviar_mensaje_grupo,
     "reenviar_comprobante_cliente": handler_reenviar_comprobante_cliente,
+    "consultar_historial_cliente": handler_consultar_historial_cliente,
     "publicar_estado": handler_publicar_estado,
     "programar_estado": handler_programar_estado,
     "listar_estados_programados": handler_listar_estados_programados,

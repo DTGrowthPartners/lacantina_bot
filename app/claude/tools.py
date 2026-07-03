@@ -87,6 +87,32 @@ def _normalizar_nombre(valor: str | None) -> str:
     return re.sub(r"\s+", " ", (valor or "")).strip()
 
 
+def _normalizar_texto_nombre(valor: str | None) -> str:
+    texto = (valor or "").casefold()
+    reemplazos = str.maketrans("áéíóúüñ", "aeiouun")
+    return texto.translate(reemplazos)
+
+
+def _parece_frase_no_nombre(valor: str | None) -> bool:
+    original = valor or ""
+    texto = _normalizar_texto_nombre(original)
+    if not texto:
+        return True
+    if re.search(r"[¿?]", original):
+        return True
+    patrones = (
+        r"\b(?:mesa|mesas|puesto|puestos|silla|zona|cantina|vip|rumbero|"
+        r"barra|tarima|pantalla|bano|banos|esquina)\b",
+        r"\b(?:quedariamos|quedamos|quedar|queda|quedaria)\b",
+        r"\b(?:dime|digame|me\s+dice|me\s+dices|me\s+indica|"
+        r"indicame|confirmame)\b",
+        r"\b(?:quiero|queremos|puedo|podemos|podriamos|seria)\b",
+        r"^(?:y\s+)?(?:es\s+)?(?:en|al|a\s+la|a\s+el)\b",
+        r"\b(?:cerca|junto|pegad[ao]s?|al\s+lado|frente)\b",
+    )
+    return any(re.search(patron, texto, flags=re.IGNORECASE) for patron in patrones)
+
+
 _NOMBRES_RESERVA_INVALIDOS = {
     "si", "sí", "no", "ok", "dale", "listo", "gracias",
     "por favor", "porfa", "porfis", "porfi",
@@ -96,12 +122,12 @@ _NOMBRES_RESERVA_INVALIDOS = {
 
 def _nombre_reserva_sospechoso(valor: str | None) -> bool:
     nombre = _normalizar_nombre(valor).casefold()
-    return not nombre or nombre in _NOMBRES_RESERVA_INVALIDOS
+    return not nombre or nombre in _NOMBRES_RESERVA_INVALIDOS or _parece_frase_no_nombre(nombre)
 
 
 def _nombre_reserva_basura(valor: str | None) -> bool:
     nombre = _normalizar_nombre(valor).casefold()
-    return bool(nombre) and nombre in _NOMBRES_RESERVA_INVALIDOS
+    return bool(nombre) and (nombre in _NOMBRES_RESERVA_INVALIDOS or _parece_frase_no_nombre(nombre))
 
 
 def _validar_nombre_reserva(args: dict, ctx: dict) -> dict | None:

@@ -46,6 +46,38 @@ class NombreReservaTests(unittest.TestCase):
 
         self.assertIsNone(nombre)
 
+    def test_no_toma_ubicacion_como_nombre(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(direccion="inbound", contenido="Es en toda la esquina"),
+        ]
+
+        nombre = _nombre_reserva_explicito("Es en toda la esquina", historial)
+
+        self.assertIsNone(nombre)
+
+    def test_no_toma_pregunta_de_puesto_como_nombre(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="¿A nombre de quién hago la reserva?",
+            ),
+            SimpleNamespace(
+                direccion="inbound",
+                contenido="Y me dice en qué puesto quedaríamos",
+            ),
+        ]
+
+        nombre = _nombre_reserva_explicito(
+            "Y me dice en qué puesto quedaríamos",
+            historial,
+        )
+
+        self.assertIsNone(nombre)
+
     def test_limpia_por_favor_antes_del_nombre(self):
         historial = [
             SimpleNamespace(
@@ -161,6 +193,31 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
                     "mesa_id": 17,
                     "nombre_cliente": "Nombre del perfil",
                     "num_personas": 5,
+                },
+                ctx,
+            )
+
+        self.assertTrue(result["falta_nombre_confirmado"])
+        crear.assert_not_awaited()
+
+    async def test_bloquea_reserva_si_nombre_confirmado_es_frase(self):
+        ctx = {
+            "cliente_numero": "+573015117671",
+            "nombre_reserva_confirmado": "Y me dice en qué puesto quedaríamos",
+            "outbox": [],
+        }
+
+        with patch.object(
+            tools.cantina_api,
+            "crear_reserva",
+            new=AsyncMock(),
+        ) as crear:
+            result = await tools.handler_crear_reserva(
+                {
+                    "fecha": "2026-07-03",
+                    "mesa_id": 2,
+                    "nombre_cliente": "Y me dice en qué puesto quedaríamos",
+                    "num_personas": 3,
                 },
                 ctx,
             )
