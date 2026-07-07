@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
 from app.claude import tools, tools_equipo
-from app.flows.equipo import _pide_marcar_casa_llena_hoy
+from app.flows.equipo import _pide_marcar_casa_llena_hoy, _pide_reabrir_reservas_hoy
 
 
 class CasaLlenaClienteTests(unittest.IsolatedAsyncioTestCase):
@@ -100,6 +100,33 @@ class CasaLlenaEquipoTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(caso=caso):
                 self.assertFalse(_pide_marcar_casa_llena_hoy(caso))
 
+    def test_detecta_comandos_directos_para_reabrir_hoy(self):
+        casos = (
+            "Abrir reservas",
+            "@La Cantina Plus abrir reservas",
+            "abre reservas",
+            "reabrir reservas",
+            "quitar casa llena",
+            "desactivar casa llena",
+        )
+
+        for caso in casos:
+            with self.subTest(caso=caso):
+                self.assertTrue(_pide_reabrir_reservas_hoy(caso))
+
+    def test_no_reabre_por_consultas_ni_fechas_futuras(self):
+        casos = (
+            "¿Están abiertas las reservas?",
+            "revisa si están abiertas las reservas",
+            "abrir reservas mañana",
+            "abrir reservas para el 10",
+            "estado de reservas",
+        )
+
+        for caso in casos:
+            with self.subTest(caso=caso):
+                self.assertFalse(_pide_reabrir_reservas_hoy(caso))
+
     async def test_tool_equipo_sin_fecha_cierra_solo_hoy(self):
         hoy = datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
 
@@ -115,6 +142,22 @@ class CasaLlenaEquipoTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result["ok"])
         marcar.assert_awaited_once_with(hoy, "Casa llena", "Edgardo")
+
+    async def test_tool_equipo_sin_fecha_reabre_solo_hoy(self):
+        hoy = datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
+
+        with patch.object(
+            tools_equipo.cantina_api,
+            "reabrir_reservas",
+            new=AsyncMock(return_value={"ok": True}),
+        ) as reabrir:
+            result = await tools_equipo.handler_reabrir_reservas(
+                {},
+                {"miembro_nombre": "Edgardo"},
+            )
+
+        self.assertTrue(result["ok"])
+        reabrir.assert_awaited_once_with(hoy)
 
 
 if __name__ == "__main__":

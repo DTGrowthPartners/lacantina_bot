@@ -273,6 +273,46 @@ def _pide_marcar_casa_llena_hoy(texto: str | None) -> bool:
     return "casa llena" in limpio and len(limpio.split()) <= 6
 
 
+def _pide_reabrir_reservas_hoy(texto: str | None) -> bool:
+    """Comando operativo directo: volver a permitir reservas solo para hoy."""
+    original = texto or ""
+    limpio = _normalizar_comando_equipo(original)
+    if not limpio:
+        return False
+    if "?" in original or "¿" in original:
+        return False
+    if re.search(
+        r"\b(?:hay|consulta|consultar|revisa|revisar|verifica|verificar|"
+        r"sigue|esta|estatus|estado|manana|pasado|fecha|dia|"
+        r"para|el\s+\d{1,2}|20\d{2}-\d{2}-\d{2})\b",
+        limpio,
+    ):
+        return False
+
+    comandos_exactos = {
+        "abrir reservas",
+        "abre reservas",
+        "reabrir reservas",
+        "reabre reservas",
+        "activar reservas",
+        "activa reservas",
+        "volver a abrir reservas",
+        "abrir reservaciones",
+        "abre reservaciones",
+        "quitar casa llena",
+        "quita casa llena",
+        "desactivar casa llena",
+        "desactiva casa llena",
+    }
+    if limpio in comandos_exactos:
+        return True
+    if re.search(r"\b(?:abrir|abre|reabrir|reabre|activar?|activa)\b.*\breserva(?:s|ciones)?\b", limpio):
+        return True
+    if re.search(r"\b(?:quitar|quita|desactivar?|desactiva)\b.*\bcasa llena\b", limpio):
+        return True
+    return False
+
+
 def _mes_pedido_eventos(texto: str) -> str | None:
     limpio = re.sub(r"@\d+", " ", texto or "").lower()
     if "evento" not in limpio:
@@ -540,7 +580,9 @@ async def procesar_mensaje_equipo(
         )
 
     rol = (miembro.rol or "").lower()
-    if rol != "cliente" and _pide_marcar_casa_llena_hoy(instruccion) and msg.tipo == "texto":
+    comando_casa_llena = rol != "cliente" and msg.tipo == "texto" and _pide_marcar_casa_llena_hoy(instruccion)
+    comando_abrir_reservas = rol != "cliente" and msg.tipo == "texto" and _pide_reabrir_reservas_hoy(instruccion)
+    if comando_casa_llena or comando_abrir_reservas:
         fecha = _fecha_hoy_colombia()
         ctx_directo = {
             "session": session,
@@ -549,27 +591,38 @@ async def procesar_mensaje_equipo(
             "rol": miembro.rol,
             "destino_envio": destino_envio,
         }
-        result = await HANDLERS_EQUIPO["marcar_casa_llena"](
-            {"fecha": fecha, "motivo": "Casa llena"},
-            ctx_directo,
-        )
+        tool = "marcar_casa_llena" if comando_casa_llena else "reabrir_reservas"
+        args_tool = {"fecha": fecha, "motivo": "Casa llena"} if comando_casa_llena else {"fecha": fecha}
+        result = await HANDLERS_EQUIPO[tool](args_tool, ctx_directo)
         ok = isinstance(result, dict) and result.get("ok", True) is not False
-        if ok:
+        if ok and comando_casa_llena:
             texto_final = (
                 f"Listo, activé *casa llena* para hoy ({fecha}). "
                 "Desde ahora no se aceptan más reservas para hoy; "
                 "las fechas futuras siguen abiertas."
             )
-        else:
+        elif ok:
+            texto_final = (
+                f"Listo, abrí reservas para hoy ({fecha}). "
+                "Desde ahora se pueden recibir reservas para hoy; "
+                "las fechas futuras quedan abiertas normalmente."
+            )
+        elif comando_casa_llena:
             err = (result or {}).get("error") if isinstance(result, dict) else None
             texto_final = (
                 f"No pude activar casa llena para hoy ({fecha})"
                 f"{f': {err}' if err else '.'}"
             )
+        else:
+            err = (result or {}).get("error") if isinstance(result, dict) else None
+            texto_final = (
+                f"No pude abrir reservas para hoy ({fecha})"
+                f"{f': {err}' if err else '.'}"
+            )
         try:
             await enviar_texto(destino_envio, texto_final)
         except Exception as e:
-            log.error("flow_equipo.casa_llena_directa.enviar_fail", error=str(e))
+            log.error("flow_equipo.reservas_modo_directo.enviar_fail", tool=tool, error=str(e))
         await guardar_conversacion(
             session,
             cliente_id=cliente_proxy.id,
@@ -580,7 +633,7 @@ async def procesar_mensaje_equipo(
             metadata={
                 "es_equipo": True,
                 "miembro": miembro.nombre,
-                "tools": ["marcar_casa_llena"],
+                "tools": [tool],
                 "directo": True,
                 "fecha": fecha,
                 "resultado": result,
@@ -588,9 +641,10 @@ async def procesar_mensaje_equipo(
         )
         await session.commit()
         log.info(
-            "flow_equipo.casa_llena_directa",
+            "flow_equipo.reservas_modo_directo",
             miembro=miembro.nombre,
             fecha=fecha,
+            tool=tool,
             ok=ok,
         )
         return
