@@ -66,6 +66,60 @@ def _anotar_politica_horario_cover(res: dict) -> dict:
     return res
 
 
+def _es_bloqueo_casa_llena(res: dict | None) -> bool:
+    if not isinstance(res, dict):
+        return False
+    if res.get("casa_llena") or res.get("bloqueo_casa_llena"):
+        return True
+    texto = " ".join(
+        str(res.get(k) or "")
+        for k in ("error", "mensaje", "detail", "motivo", "razon")
+    ).casefold()
+    return any(
+        marca in texto
+        for marca in (
+            "casa llena",
+            "reservas cerradas",
+            "cierre de reservas",
+            "cierre activo",
+            "cerrado por aforo",
+        )
+    )
+
+
+def _respuesta_cliente_casa_llena(fecha: str | None = None) -> str:
+    fecha_txt = f" para esa fecha ({fecha})" if fecha else " para esa fecha"
+    return (
+        "Gracias por querer reservar con nosotros. "
+        f"Por ahora ya estamos en casa llena{fecha_txt} y no podemos recibir "
+        "más reservas. Lo sentimos mucho; será un gusto recibirte en una próxima ocasión."
+    )
+
+
+def _normalizar_casa_llena_cliente(res: dict, fecha: str | None = None) -> dict:
+    if not _es_bloqueo_casa_llena(res):
+        return res
+    normalizado = dict(res)
+    normalizado.update({
+        "ok": False,
+        "casa_llena": True,
+        "bloqueo_casa_llena": True,
+        "hay_disponibilidad": False,
+        "total_disponibles": 0,
+        "mesas_disponibles": [],
+        "combos": [],
+        "combo_sugerido": None,
+        "salas_privadas": {"disponibles": []},
+        "respuesta_cliente": _respuesta_cliente_casa_llena(fecha),
+        "instruccion": (
+            "Responde al cliente con `respuesta_cliente`. No menciones backend, "
+            "panel, reapertura, equipo ni opciones internas. No ofrezcas mesas, "
+            "combos ni salas para esta fecha."
+        ),
+    })
+    return normalizado
+
+
 def _mismo_telefono(a: str | None, b: str | None) -> bool:
     """True si dos teléfonos son el mismo número (compara solo dígitos, últimos 10).
     Se usa para verificar que una reserva pertenece al cliente que pregunta."""
@@ -634,17 +688,8 @@ async def handler_consultar_disponibilidad(args: dict, ctx: dict) -> dict:
     # o en salas privadas. Sin esta señal el bot lee "0" y dice "no hay". 🚫
     if isinstance(res, dict) and res.get("ok", True):
         if res.get("casa_llena"):
-            res["hay_disponibilidad"] = False
-            res["total_disponibles"] = 0
-            res["mesas_disponibles"] = []
-            res["combos"] = []
-            res["combo_sugerido"] = None
-            res["salas_privadas"] = {"disponibles": []}
-            res["nota_bot"] = (
-                "La Cantina cerró reservas para esta fecha porque está llena. "
-                "Indica con amabilidad que no hay disponibilidad y NO ofrezcas "
-                "mesas, combos ni salas."
-            )
+            res = _normalizar_casa_llena_cliente(res, fecha)
+            res["nota_bot"] = res["instruccion"]
             return res
         total = res.get("total_disponibles") or 0
         combos = res.get("combos") or []
@@ -752,6 +797,7 @@ async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
     if previo is not None:
         return previo
     res = await cantina_api.crear_reserva(payload)
+    res = _normalizar_casa_llena_cliente(res, args.get("fecha"))
     res = _anotar_politica_horario_cover(res)
     res = await _autocorregir_nombre_reserva("simple", args, ctx, res)
     res = _guardar_resultado_reserva("simple", payload, ctx, res)
@@ -792,6 +838,7 @@ async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
     if previo is not None:
         return previo
     res = await cantina_api.crear_reserva_grupo(payload)
+    res = _normalizar_casa_llena_cliente(res, args.get("fecha"))
     res = _anotar_politica_horario_cover(res)
     res = await _autocorregir_nombre_reserva("grupo", args, ctx, res)
     res = _guardar_resultado_reserva("grupo", payload, ctx, res)
@@ -825,6 +872,7 @@ async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
     if previo is not None:
         return previo
     res = await cantina_api.crear_reserva_sala(payload)
+    res = _normalizar_casa_llena_cliente(res, args.get("fecha"))
     res = await _autocorregir_nombre_reserva("sala", args, ctx, res)
     res = _guardar_resultado_reserva("sala", payload, ctx, res)
     if isinstance(res, dict) and res.get("ok"):
