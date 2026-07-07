@@ -17,7 +17,9 @@ ctx incluye:
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta
 from typing import Awaitable, Callable
+from zoneinfo import ZoneInfo
 
 from app.integrations import cantina_api
 from app.eventos import clave_orden_evento, extraer_eventos
@@ -391,6 +393,95 @@ def _formatear_alerta_cambio_personas(anterior: dict, nueva: dict, telefono: str
         f"🧾 *ID:* {nueva.get('id') or anterior.get('id')}",
         f"✅ *Estado:* {nueva.get('estado') or anterior.get('estado') or 'confirmada'}",
     ])
+
+
+def _normalizar_texto_contexto(valor: str | None) -> str:
+    texto = (valor or "").casefold()
+    return texto.translate(str.maketrans("áéíóúüñ", "aeiouun"))
+
+
+def _textos_contexto_cliente(ctx: dict) -> list[str]:
+    textos: list[str] = []
+    actual = (ctx.get("mensaje_actual_cliente") or "").strip()
+    if actual:
+        textos.append(actual)
+    historial = ctx.get("historial_cliente_reciente")
+    if isinstance(historial, list):
+        for item in reversed(historial):
+            if isinstance(item, dict):
+                contenido = (item.get("contenido") or "").strip()
+            else:
+                contenido = str(item or "").strip()
+            if contenido and contenido not in textos:
+                textos.append(contenido)
+    return textos
+
+
+def _fechas_en_texto(texto: str) -> list[str]:
+    normalizado = _normalizar_texto_contexto(texto)
+    fechas: list[str] = []
+    for match in re.finditer(r"\b(20\d{2})-(\d{2})-(\d{2})\b", normalizado):
+        fechas.append(f"{match.group(1)}-{match.group(2)}-{match.group(3)}")
+    for match in re.finditer(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](20\d{2}))?\b", normalizado):
+        dia = int(match.group(1))
+        mes = int(match.group(2))
+        year = int(match.group(3) or datetime.now(ZoneInfo("America/Bogota")).year)
+        try:
+            fechas.append(datetime(year, mes, dia).date().isoformat())
+        except ValueError:
+            pass
+    hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+    if re.search(r"\bhoy\b", normalizado):
+        fechas.append(hoy.isoformat())
+    if re.search(r"\bmanana\b", normalizado):
+        fechas.append((hoy + timedelta(days=1)).isoformat())
+    return list(dict.fromkeys(fechas))
+
+
+def _mesas_en_texto(texto: str) -> set[int]:
+    normalizado = _normalizar_texto_contexto(texto)
+    mesas: set[int] = set()
+    for match in re.finditer(r"\bmesa(?:s)?\s*#?\s*(\d{1,3})\b", normalizado):
+        mesas.add(int(match.group(1)))
+    return mesas
+
+
+def _inferir_reserva_desde_contexto(reservas: list[dict], ctx: dict) -> dict | None:
+    """Escoge una reserva solo si el chat reciente apunta a una unica candidata."""
+    if len(reservas) <= 1:
+        return reservas[0] if reservas else None
+
+    for texto in _textos_contexto_cliente(ctx):
+        ids = {
+            int(match.group(1))
+            for match in re.finditer(
+                r"\b(?:reserva\s*)?(?:id|#)\s*[:#-]?\s*(\d+)\b",
+                _normalizar_texto_contexto(texto),
+            )
+        }
+        if ids:
+            candidatas = [r for r in reservas if r.get("id") in ids]
+            if len(candidatas) == 1:
+                return candidatas[0]
+
+        fechas = set(_fechas_en_texto(texto))
+        mesas = _mesas_en_texto(texto)
+        if fechas and mesas:
+            candidatas = [
+                r for r in reservas
+                if r.get("fecha") in fechas and r.get("mesa_numero") in mesas
+            ]
+            if len(candidatas) == 1:
+                return candidatas[0]
+        if fechas:
+            candidatas = [r for r in reservas if r.get("fecha") in fechas]
+            if len(candidatas) == 1:
+                return candidatas[0]
+        if mesas:
+            candidatas = [r for r in reservas if r.get("mesa_numero") in mesas]
+            if len(candidatas) == 1:
+                return candidatas[0]
+    return None
 
 
 async def _cliente_ya_reservo(fecha: str | None, telefono: str | None) -> list | None:
@@ -1128,13 +1219,17 @@ async def handler_actualizar_personas_reserva_cliente(args: dict, ctx: dict) -> 
             "error": "No encontré una reserva activa tuya con esos datos.",
         }
     if len(reservas) > 1:
+        inferida = _inferir_reserva_desde_contexto(reservas, ctx)
+        if inferida:
+            reservas = [inferida]
+    if len(reservas) > 1:
         return {
             "ok": False,
             "requiere_aclaracion": True,
             "reservas": reservas,
             "error": (
-                "Hay varias reservas activas. Pregunta únicamente cuál fecha o "
-                "mesa quiere actualizar."
+                "Hay varias reservas activas y el historial reciente no deja claro "
+                "cuál actualizar. Pregunta únicamente cuál fecha o mesa quiere tocar."
             ),
         }
 

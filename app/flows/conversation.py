@@ -517,6 +517,15 @@ async def procesar_mensaje_inbound(
         "cliente_numero": cliente_numero,
         "intent": intent,
         "outbox": outbox,
+        "mensaje_actual_cliente": contenido_usuario,
+        "historial_cliente_reciente": [
+            {
+                "direccion": getattr(h, "direccion", None),
+                "contenido": getattr(h, "contenido", None),
+            }
+            for h in historial_db[-12:]
+            if getattr(h, "contenido", None)
+        ],
         "incoming_media_url": msg.media_url,
         "incoming_media_bytes": imagen_bytes,
         "incoming_media_mime": imagen_mime or msg.media_mime,

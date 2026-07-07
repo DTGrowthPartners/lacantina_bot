@@ -1,6 +1,8 @@
 import unittest
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
 from app.claude import tools
 from app.flows.conversation import _nombre_reserva_explicito
@@ -784,6 +786,72 @@ class CambioPersonasTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(resultado["ok"])
         actualizar.assert_not_awaited()
+
+    async def test_infiere_reserva_por_fecha_del_chat(self):
+        hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+        reserva_hoy = dict(self.reserva, fecha=hoy.isoformat())
+        reserva_manana = dict(
+            self.reserva,
+            id=247,
+            fecha=(hoy + timedelta(days=1)).isoformat(),
+            mesa_numero=22,
+        )
+        self.ctx["mensaje_actual_cliente"] = "actualiza la de hoy a 4 personas"
+        with (
+            patch.object(
+                tools.cantina_api,
+                "reservas_cliente",
+                new=AsyncMock(return_value={
+                    "ok": True,
+                    "reservas": [reserva_hoy, reserva_manana],
+                }),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "actualizar_reserva",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as actualizar,
+        ):
+            resultado = await tools.handler_actualizar_personas_reserva_cliente(
+                {"num_personas": 4},
+                self.ctx,
+            )
+
+        self.assertTrue(resultado["modificada"])
+        actualizar.assert_awaited_once_with(246, {"num_personas": 4})
+
+    async def test_infiere_reserva_por_mesa_del_historial(self):
+        reserva_21 = dict(self.reserva, id=246, mesa_numero=21)
+        reserva_22 = dict(self.reserva, id=247, mesa_numero=22)
+        self.ctx["mensaje_actual_cliente"] = "actualízala a 4 personas"
+        self.ctx["historial_cliente_reciente"] = [
+            {
+                "direccion": "outbound",
+                "contenido": "Tu reserva #246 para hoy quedó en mesa 21 VIP.",
+            }
+        ]
+        with (
+            patch.object(
+                tools.cantina_api,
+                "reservas_cliente",
+                new=AsyncMock(return_value={
+                    "ok": True,
+                    "reservas": [reserva_21, reserva_22],
+                }),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "actualizar_reserva",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as actualizar,
+        ):
+            resultado = await tools.handler_actualizar_personas_reserva_cliente(
+                {"num_personas": 4},
+                self.ctx,
+            )
+
+        self.assertTrue(resultado["modificada"])
+        actualizar.assert_awaited_once_with(246, {"num_personas": 4})
 
     def test_tool_cliente_incluye_actualizar_personas(self):
         nombres = {tool["name"] for tool in tools.TOOL_DEFINITIONS}
