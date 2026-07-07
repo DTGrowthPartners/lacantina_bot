@@ -378,6 +378,21 @@ def _formatear_alerta_cambio_mesa(anterior: dict, nueva: dict, telefono: str) ->
     ])
 
 
+def _formatear_alerta_cambio_personas(anterior: dict, nueva: dict, telefono: str) -> str:
+    return "\n".join([
+        "🔄 *Reserva modificada — cantidad de personas*",
+        "",
+        f"👤 *A nombre de:* {nueva.get('nombre_cliente') or anterior.get('nombre_cliente')}",
+        f"📱 *Teléfono:* {telefono}",
+        f"📅 *Fecha:* {nueva.get('fecha') or anterior.get('fecha')}",
+        f"🪑 *Mesa:* {nueva.get('mesa_numero') or anterior.get('mesa_numero')}",
+        f"↩️ *Personas antes:* {anterior.get('num_personas')}",
+        f"👥 *Personas ahora:* {nueva.get('num_personas')}",
+        f"🧾 *ID:* {nueva.get('id') or anterior.get('id')}",
+        f"✅ *Estado:* {nueva.get('estado') or anterior.get('estado') or 'confirmada'}",
+    ])
+
+
 async def _cliente_ya_reservo(fecha: str | None, telefono: str | None) -> list | None:
     """Mesas que el cliente (por teléfono) YA tiene reservadas esa fecha, o None.
 
@@ -527,6 +542,34 @@ TOOL_DEFINITIONS: list[dict] = [
                 },
             },
             "required": ["fecha", "mesa_nueva"],
+        },
+    },
+    {
+        "name": "actualizar_personas_reserva_cliente",
+        "description": (
+            "Actualiza la cantidad de personas de una reserva SIMPLE activa del "
+            "propio cliente. Úsala cuando el cliente pida cambiar de 2 a 4 "
+            "personas, sumar/quitar personas o ajustar el número de asistentes. "
+            "Si el cliente ya dio la nueva cantidad, NO pidas validación extra: "
+            "ejecútala y confirma. No cambia mesa ni valida capacidad."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "num_personas": {
+                    "type": "integer",
+                    "description": "Nueva cantidad de personas.",
+                },
+                "fecha": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD opcional; úsala si el cliente la indicó.",
+                },
+                "reserva_id": {
+                    "type": "integer",
+                    "description": "Opcional; no se lo pidas al cliente.",
+                },
+            },
+            "required": ["num_personas"],
         },
     },
     {
@@ -1055,6 +1098,102 @@ async def handler_cambiar_mesa_reserva_cliente(args: dict, ctx: dict) -> dict:
     }
 
 
+async def handler_actualizar_personas_reserva_cliente(args: dict, ctx: dict) -> dict:
+    """Actualiza asistentes de una reserva propia sin pedir confirmación extra."""
+    telefono = ctx.get("cliente_numero")
+    nuevo_numero = args.get("num_personas")
+    try:
+        nuevo_numero = int(nuevo_numero)
+    except (TypeError, ValueError):
+        nuevo_numero = None
+    if not nuevo_numero or nuevo_numero < 1:
+        return {"ok": False, "error": "Indica una cantidad válida de personas."}
+
+    consulta = await cantina_api.reservas_cliente(telefono)
+    if not (isinstance(consulta, dict) and consulta.get("ok", True)):
+        return consulta
+
+    reservas = [
+        reserva for reserva in (consulta.get("reservas") or [])
+        if reserva.get("estado") != "cancelada"
+    ]
+    if args.get("reserva_id"):
+        reservas = [r for r in reservas if r.get("id") == args["reserva_id"]]
+    if args.get("fecha"):
+        reservas = [r for r in reservas if r.get("fecha") == args["fecha"]]
+
+    if not reservas:
+        return {
+            "ok": False,
+            "error": "No encontré una reserva activa tuya con esos datos.",
+        }
+    if len(reservas) > 1:
+        return {
+            "ok": False,
+            "requiere_aclaracion": True,
+            "reservas": reservas,
+            "error": (
+                "Hay varias reservas activas. Pregunta únicamente cuál fecha o "
+                "mesa quiere actualizar."
+            ),
+        }
+
+    anterior = reservas[0]
+    if anterior.get("tipo_reserva") != "mesa" or anterior.get("grupo_id"):
+        return {
+            "ok": False,
+            "requiere_equipo": True,
+            "error": "Los cambios de personas en grupos o salas debe hacerlos el equipo.",
+        }
+    if anterior.get("num_personas") == nuevo_numero:
+        return {
+            "ok": True,
+            "modificada": False,
+            "ya_estaba_actualizada": True,
+            "reserva": anterior,
+            "instruccion": (
+                f"La reserva ya está registrada para {nuevo_numero} personas. "
+                "Confírmalo sin pedir validación extra."
+            ),
+        }
+
+    actualizado = await cantina_api.actualizar_reserva(
+        anterior["id"],
+        {"num_personas": nuevo_numero},
+    )
+    if not (isinstance(actualizado, dict) and actualizado.get("ok", True)):
+        return actualizado
+
+    nueva = _extraer_reserva(actualizado)
+    if not isinstance(nueva, dict) or not nueva.get("id"):
+        nueva = dict(anterior)
+    nueva["num_personas"] = nuevo_numero
+    outbox = ctx.get("outbox")
+    if isinstance(outbox, list):
+        outbox.append({
+            "tipo": "reserva_modificada",
+            "mensaje": _formatear_alerta_cambio_personas(anterior, nueva, telefono),
+            "cliente_numero": telefono,
+        })
+    log.info(
+        "tools.reserva.personas_actualizadas",
+        cliente=telefono,
+        reserva_id=anterior.get("id"),
+        antes=anterior.get("num_personas"),
+        ahora=nuevo_numero,
+    )
+    return {
+        "ok": True,
+        "modificada": True,
+        "reserva_anterior": anterior,
+        "reserva": nueva,
+        "instruccion": (
+            f"Confirma que la reserva #{anterior.get('id')} quedó actualizada "
+            f"a {nuevo_numero} personas. No pidas validación adicional."
+        ),
+    }
+
+
 async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
     reserva_id = args.get("reserva_id")
     url = args.get("comprobante_url") or ctx.get("incoming_media_url")
@@ -1257,6 +1396,7 @@ HANDLERS: dict[str, Handler] = {
     "crear_reserva_grupo": handler_crear_reserva_grupo,
     "crear_reserva_sala_privada": handler_crear_reserva_sala,
     "cambiar_mesa_reserva_cliente": handler_cambiar_mesa_reserva_cliente,
+    "actualizar_personas_reserva_cliente": handler_actualizar_personas_reserva_cliente,
     "consultar_reserva_cliente": handler_consultar_reserva_cliente,
     "cancelar_reserva_cliente": handler_cancelar_reserva_cliente,
     "registrar_comprobante_cover": handler_registrar_comprobante_cover,

@@ -715,5 +715,82 @@ class CambioMesaTests(unittest.IsolatedAsyncioTestCase):
         consultar.assert_not_awaited()
 
 
+class CambioPersonasTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.ctx = {
+            "cliente_numero": "+573022043954",
+            "intent": "modificar_reserva",
+            "outbox": [],
+        }
+        self.reserva = {
+            "id": 246,
+            "fecha": "2026-07-07",
+            "mesa_id": 21,
+            "mesa_numero": 21,
+            "mesa_zona": "VIP",
+            "nombre_cliente": "Rubén Ramos",
+            "telefono": "+573022043954",
+            "num_personas": 2,
+            "estado": "confirmada",
+            "tipo_reserva": "mesa",
+            "grupo_id": None,
+        }
+
+    async def test_actualiza_personas_sin_pedir_validacion(self):
+        actualizada = dict(self.reserva, num_personas=4)
+        with (
+            patch.object(
+                tools.cantina_api,
+                "reservas_cliente",
+                new=AsyncMock(return_value={"ok": True, "reservas": [self.reserva]}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "actualizar_reserva",
+                new=AsyncMock(return_value={"ok": True, "reserva": actualizada}),
+            ) as actualizar,
+        ):
+            resultado = await tools.handler_actualizar_personas_reserva_cliente(
+                {"reserva_id": 246, "num_personas": 4},
+                self.ctx,
+            )
+
+        self.assertTrue(resultado["modificada"])
+        self.assertIn("No pidas validación adicional", resultado["instruccion"])
+        actualizar.assert_awaited_once_with(246, {"num_personas": 4})
+        self.assertEqual(len(self.ctx["outbox"]), 1)
+        mensaje = self.ctx["outbox"][0]["mensaje"]
+        self.assertIn("*Reserva modificada", mensaje)
+        self.assertIn("*Personas antes:* 2", mensaje)
+        self.assertIn("*Personas ahora:* 4", mensaje)
+
+    async def test_no_actualiza_reserva_ajena_o_inexistente(self):
+        with (
+            patch.object(
+                tools.cantina_api,
+                "reservas_cliente",
+                new=AsyncMock(return_value={"ok": True, "reservas": [self.reserva]}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "actualizar_reserva",
+                new=AsyncMock(),
+            ) as actualizar,
+        ):
+            resultado = await tools.handler_actualizar_personas_reserva_cliente(
+                {"reserva_id": 999, "num_personas": 4},
+                self.ctx,
+            )
+
+        self.assertFalse(resultado["ok"])
+        actualizar.assert_not_awaited()
+
+    def test_tool_cliente_incluye_actualizar_personas(self):
+        nombres = {tool["name"] for tool in tools.TOOL_DEFINITIONS}
+
+        self.assertIn("actualizar_personas_reserva_cliente", nombres)
+        self.assertIn("actualizar_personas_reserva_cliente", tools.HANDLERS)
+
+
 if __name__ == "__main__":
     unittest.main()
