@@ -222,6 +222,57 @@ _MESES_ES = {
 }
 
 
+def _normalizar_comando_equipo(texto: str | None) -> str:
+    valor = (texto or "").casefold()
+    valor = valor.translate(str.maketrans("áéíóúüñ", "aeiouun"))
+    valor = re.sub(r"@\S+", " ", valor)
+    valor = re.sub(r"[^a-z0-9\s/-]", " ", valor)
+    return re.sub(r"\s+", " ", valor).strip()
+
+
+def _fecha_hoy_colombia() -> str:
+    return datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
+
+
+def _pide_marcar_casa_llena_hoy(texto: str | None) -> bool:
+    """Comando operativo directo: cerrar reservas solo para hoy."""
+    original = texto or ""
+    limpio = _normalizar_comando_equipo(original)
+    if not limpio:
+        return False
+    if "?" in original or "¿" in original:
+        return False
+    if re.search(
+        r"\b(?:hay|consulta|consultar|revisa|revisar|verifica|verificar|"
+        r"sigue|esta|estatus|estado|manana|mañana|pasado|fecha|dia|día|"
+        r"para|el\s+\d{1,2}|20\d{2}-\d{2}-\d{2})\b",
+        limpio,
+    ):
+        return False
+
+    comandos_exactos = {
+        "casa llena",
+        "modo casa llena",
+        "activar casa llena",
+        "activa casa llena",
+        "marca casa llena",
+        "marcar casa llena",
+        "pon casa llena",
+        "estamos llenos",
+        "llenos",
+        "no acepten mas reservas",
+        "no aceptar mas reservas",
+        "cierren reservas",
+        "cierra reservas",
+        "cerrar reservas",
+    }
+    if limpio in comandos_exactos:
+        return True
+    if re.search(r"\b(?:activar?|activa|marca|marcar|pon|modo)\b.*\bcasa llena\b", limpio):
+        return True
+    return "casa llena" in limpio and len(limpio.split()) <= 6
+
+
 def _mes_pedido_eventos(texto: str) -> str | None:
     limpio = re.sub(r"@\d+", " ", texto or "").lower()
     if "evento" not in limpio:
@@ -487,6 +538,62 @@ async def procesar_mensaje_equipo(
             media_url=msg.media_url,
             metadata={"es_equipo": True, "miembro": miembro.nombre, "es_grupo": es_grupo},
         )
+
+    rol = (miembro.rol or "").lower()
+    if rol != "cliente" and _pide_marcar_casa_llena_hoy(instruccion) and msg.tipo == "texto":
+        fecha = _fecha_hoy_colombia()
+        ctx_directo = {
+            "session": session,
+            "miembro_nombre": miembro.nombre,
+            "miembro_numero": miembro.numero_whatsapp,
+            "rol": miembro.rol,
+            "destino_envio": destino_envio,
+        }
+        result = await HANDLERS_EQUIPO["marcar_casa_llena"](
+            {"fecha": fecha, "motivo": "Casa llena"},
+            ctx_directo,
+        )
+        ok = isinstance(result, dict) and result.get("ok", True) is not False
+        if ok:
+            texto_final = (
+                f"Listo, activé *casa llena* para hoy ({fecha}). "
+                "Desde ahora no se aceptan más reservas para hoy; "
+                "las fechas futuras siguen abiertas."
+            )
+        else:
+            err = (result or {}).get("error") if isinstance(result, dict) else None
+            texto_final = (
+                f"No pude activar casa llena para hoy ({fecha})"
+                f"{f': {err}' if err else '.'}"
+            )
+        try:
+            await enviar_texto(destino_envio, texto_final)
+        except Exception as e:
+            log.error("flow_equipo.casa_llena_directa.enviar_fail", error=str(e))
+        await guardar_conversacion(
+            session,
+            cliente_id=cliente_proxy.id,
+            direccion="outbound",
+            tipo="texto",
+            contenido=texto_final,
+            modelo="directo",
+            metadata={
+                "es_equipo": True,
+                "miembro": miembro.nombre,
+                "tools": ["marcar_casa_llena"],
+                "directo": True,
+                "fecha": fecha,
+                "resultado": result,
+            },
+        )
+        await session.commit()
+        log.info(
+            "flow_equipo.casa_llena_directa",
+            miembro=miembro.nombre,
+            fecha=fecha,
+            ok=ok,
+        )
+        return
 
     if _pide_estados_publicados(instruccion):
         await _enviar_estados_publicados_equipo(

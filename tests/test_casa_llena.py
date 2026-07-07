@@ -1,7 +1,10 @@
 import unittest
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
-from app.claude import tools
+from app.claude import tools, tools_equipo
+from app.flows.equipo import _pide_marcar_casa_llena_hoy
 
 
 class CasaLlenaClienteTests(unittest.IsolatedAsyncioTestCase):
@@ -67,6 +70,51 @@ class CasaLlenaClienteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("casa llena", result["respuesta_cliente"])
         self.assertIn("no podemos recibir más reservas", result["respuesta_cliente"])
         self.assertEqual(ctx["outbox"], [])
+
+
+class CasaLlenaEquipoTests(unittest.IsolatedAsyncioTestCase):
+    def test_detecta_comandos_directos_para_hoy(self):
+        casos = (
+            "Casa llena",
+            "@La Cantina Plus casa llena",
+            "activar casa llena",
+            "estamos llenos",
+            "no acepten mas reservas",
+            "cierren reservas",
+        )
+
+        for caso in casos:
+            with self.subTest(caso=caso):
+                self.assertTrue(_pide_marcar_casa_llena_hoy(caso))
+
+    def test_no_detecta_consultas_ni_fechas_futuras(self):
+        casos = (
+            "¿Hay casa llena?",
+            "revisa si hay casa llena",
+            "casa llena mañana",
+            "casa llena para el 10",
+            "estado de casa llena",
+        )
+
+        for caso in casos:
+            with self.subTest(caso=caso):
+                self.assertFalse(_pide_marcar_casa_llena_hoy(caso))
+
+    async def test_tool_equipo_sin_fecha_cierra_solo_hoy(self):
+        hoy = datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
+
+        with patch.object(
+            tools_equipo.cantina_api,
+            "marcar_casa_llena",
+            new=AsyncMock(return_value={"ok": True}),
+        ) as marcar:
+            result = await tools_equipo.handler_marcar_casa_llena(
+                {},
+                {"miembro_nombre": "Edgardo"},
+            )
+
+        self.assertTrue(result["ok"])
+        marcar.assert_awaited_once_with(hoy, "Casa llena", "Edgardo")
 
 
 if __name__ == "__main__":
