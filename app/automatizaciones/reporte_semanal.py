@@ -68,7 +68,7 @@ def _dias(inicio: date, fin: date) -> list[date]:
 def _dia_label(fecha: str | date, *, incluir_mes: bool = False) -> str:
     dia = date.fromisoformat(fecha) if isinstance(fecha, str) else fecha
     if incluir_mes:
-        return f"{DAY_LABELS[dia.weekday()]} {dia.day:02d}/{dia.month:02d}"
+        return f"{DAY_LABELS[dia.weekday()]} {dia.month:02d}/{dia.day:02d}"
     return f"{DAY_LABELS[dia.weekday()]} {dia.day:02d}"
 
 
@@ -250,7 +250,7 @@ def _insights(filas: list[dict[str, Any]], bot: dict[str, Any]) -> list[str]:
     if top and top["personas"]:
         etiqueta = top["evento_txt"] or "dia normal"
         insights.append(
-            f"El pico fue {_dia_label(top['fecha'])} ({etiqueta}) con {top['personas']} personas."
+            f"El pico fue {_dia_label(top['fecha'], incluir_mes=True)} ({etiqueta}) con {top['personas']} personas."
         )
     horas = bot.get("horas_top") or []
     if horas:
@@ -409,7 +409,7 @@ def _draw_executive_report(c, data: dict[str, Any]) -> None:
     high_y = 300
     high_gap = 9
     high_w = (right - left - high_gap * 3) / 4
-    zero_txt = ", ".join(_dia_label(f["fecha"]) for f in sin_reserva[:5]) or "Sin dias vacios"
+    zero_txt = ", ".join(_dia_label(f["fecha"], incluir_mes=True) for f in sin_reserva[:5]) or "Sin dias vacios"
     if len(sin_reserva) > 5:
         zero_txt += "..."
     horas_txt = _horas_humanas(horas_top[:3])
@@ -631,7 +631,7 @@ def _bar_chart(c, filas: list[dict[str, Any]], x: float, y: float, w: float, h: 
         c.setFont("Helvetica-Bold", 6.8)
         c.drawCentredString(cx, bottom + bar_h + 5, str(value))
         c.setFont("Helvetica-Bold", 6.8)
-        c.drawCentredString(cx, y + 10, _dia_label(fila["fecha"]))
+        c.drawCentredString(cx, y + 10, _dia_label(fila["fecha"], incluir_mes=True))
 
     c.setStrokeColor(colors.HexColor("#8A94A6"))
     c.setLineWidth(0.5)
@@ -671,7 +671,7 @@ def _daily_table(c, filas: list[dict[str, Any]], x: float, y: float, w: float, h
         elif fila.get("fecha") == second.get("fecha") and int(fila.get("personas") or 0) > 0:
             estado = "Buen movimiento"
             estado_color = blue
-        values = [_dia_label(fila["fecha"]), str(fila["personas"]), str(fila["reservas"]), estado]
+        values = [_dia_label(fila["fecha"], incluir_mes=True), str(fila["personas"]), str(fila["reservas"]), estado]
         xx = x
         for col, value in enumerate(values):
             c.setFillColor(estado_color if col == 3 else colors.black)
@@ -817,7 +817,7 @@ def _line_chart(filas: list[dict[str, Any]], *, width: float, height: float):
         x = left + step * idx
         y = bottom + (value / scale_max * chart_h if scale_max else 0)
         fecha_raw = str(fila.get("fecha") or "")
-        fecha = _dia_label(fecha_raw) if fecha_raw else ""
+        fecha = _dia_label(fecha_raw, incluir_mes=True) if fecha_raw else ""
         points.append((x, y, value, fecha))
 
     for (x1, y1, *_), (x2, y2, *__) in zip(points, points[1:]):

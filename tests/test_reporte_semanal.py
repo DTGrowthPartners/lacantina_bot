@@ -31,7 +31,7 @@ class ReporteSemanalTests(unittest.TestCase):
         self.assertEqual(reporte_semanal._dia_label("2026-06-29"), "Lun 29")
         self.assertEqual(
             reporte_semanal._dia_label("2026-07-05", incluir_mes=True),
-            "Dom 05/07",
+            "Dom 07/05",
         )
 
     def test_periodo_largo_usa_formato_mes_dia(self):
@@ -223,7 +223,7 @@ class ReporteSemanalTests(unittest.TestCase):
         lineas = [item for item in drawing.contents if isinstance(item, Line)]
         self.assertGreaterEqual(len(lineas), 3)
         textos = [item.text for item in drawing.contents if isinstance(item, String)]
-        self.assertIn("Mie 01", textos)
+        self.assertIn("Mie 07/01", textos)
 
 
 class ReporteSemanalMetricasTests(unittest.IsolatedAsyncioTestCase):
