@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean
@@ -15,7 +16,7 @@ from app.config import get_settings
 from app.eventos import extraer_eventos
 from app.integrations import cantina_api
 from app.logging_setup import log
-from app.whapi.client import enviar_documento_bytes
+from app.whapi.client import enviar_imagen_bytes
 
 
 settings = get_settings()
@@ -282,13 +283,40 @@ def generar_pdf_reporte(data: dict[str, Any]) -> Path:
     return path
 
 
+def generar_imagen_reporte(pdf_path: Path) -> Path:
+    """Renderiza la primera pagina del reporte PDF a PNG para enviarla por WhatsApp."""
+    output_prefix = pdf_path.with_suffix("")
+    png_path = output_prefix.with_suffix(".png")
+    try:
+        subprocess.run(
+            [
+                "pdftoppm",
+                "-png",
+                "-singlefile",
+                "-r",
+                "180",
+                str(pdf_path),
+                str(output_prefix),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("pdftoppm no esta instalado; no puedo generar imagen del reporte") from exc
+    except subprocess.CalledProcessError as exc:
+        detalle = (exc.stderr or exc.stdout or "").strip()[:300]
+        raise RuntimeError(f"pdftoppm fallo al generar imagen del reporte: {detalle}") from exc
+    if not png_path.exists() or png_path.stat().st_size == 0:
+        raise RuntimeError("pdftoppm no genero la imagen del reporte")
+    return png_path
+
+
 def _periodo_largo(inicio: str, fin: str) -> str:
     ini = date.fromisoformat(inicio)
     end = date.fromisoformat(fin)
-    return (
-        f"{DAY_LONG[ini.weekday()]} {ini.day:02d} de {MONTHS[ini.month - 1]} a "
-        f"{DAY_LONG[end.weekday()]} {end.day:02d} de {MONTHS[end.month - 1]} de {end.year}"
-    )
+    return f"{DAY_LONG[ini.weekday()]} {ini.month:02d}/{ini.day:02d} a {DAY_LONG[end.weekday()]} {end.month:02d}/{end.day:02d}"
 
 
 def _money_color(hex_value: str):
@@ -847,21 +875,22 @@ async def accion_reporte_semanal_pdf(session: AsyncSession, params: dict) -> dic
 
     data = await recolectar_reporte_semanal(session, inicio=inicio, fin=fin)
     pdf_path = generar_pdf_reporte(data)
+    image_path = generar_imagen_reporte(pdf_path)
     destino = str(params.get("destino_id") or "").strip()
     if not destino:
-        return {"ok": False, "error": "falta destino_id para enviar el PDF"}
+        return {"ok": False, "error": "falta destino_id para enviar la imagen"}
 
     caption = (
-        f"Reporte semanal La Cantina Plus\n"
-        f"{data['inicio']} a {data['fin']}\n"
+        f"Reporte semanal La Cantina Plus - agente Nicky\n"
+        f"{_periodo_largo(data['inicio'], data['fin'])}\n"
         f"Reservas: {data['totales']['reservas']} - Personas: {data['totales']['personas']}"
     )
-    pdf_bytes = pdf_path.read_bytes()
-    await enviar_documento_bytes(
+    image_bytes = image_path.read_bytes()
+    await enviar_imagen_bytes(
         destino,
-        pdf_bytes,
-        mime="application/pdf",
-        filename=pdf_path.name,
+        image_bytes,
+        mime="image/png",
+        filename=image_path.name,
         caption=caption,
     )
     log.info(
@@ -869,7 +898,8 @@ async def accion_reporte_semanal_pdf(session: AsyncSession, params: dict) -> dic
         destino=destino,
         inicio=data["inicio"],
         fin=data["fin"],
-        bytes=len(pdf_bytes),
+        bytes=len(image_bytes),
+        formato="imagen",
     )
     return {
         "ok": True,
@@ -878,7 +908,8 @@ async def accion_reporte_semanal_pdf(session: AsyncSession, params: dict) -> dic
         "fin": data["fin"],
         "destino": destino,
         "pdf": str(pdf_path),
-        "bytes": len(pdf_bytes),
+        "imagen": str(image_path),
+        "bytes": len(image_bytes),
         "reservas": data["totales"]["reservas"],
         "personas": data["totales"]["personas"],
     }

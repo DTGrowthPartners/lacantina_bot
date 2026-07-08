@@ -1,4 +1,5 @@
 import unittest
+import shutil
 from datetime import date, datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -31,6 +32,12 @@ class ReporteSemanalTests(unittest.TestCase):
         self.assertEqual(
             reporte_semanal._dia_label("2026-07-05", incluir_mes=True),
             "Dom 05/07",
+        )
+
+    def test_periodo_largo_usa_formato_mes_dia(self):
+        self.assertEqual(
+            reporte_semanal._periodo_largo("2026-06-29", "2026-07-05"),
+            "Lunes 06/29 a Domingo 07/05",
         )
 
     def test_generar_pdf_reporte_crea_archivo_pdf(self):
@@ -91,6 +98,59 @@ class ReporteSemanalTests(unittest.TestCase):
             self.assertTrue(pdf.exists())
             self.assertGreater(pdf.stat().st_size, 1000)
             self.assertEqual(pdf.read_bytes()[:4], b"%PDF")
+
+    def test_generar_imagen_reporte_renderiza_png(self):
+        if not shutil.which("pdftoppm"):
+            self.skipTest("pdftoppm no esta instalado en este entorno")
+        try:
+            import reportlab  # noqa: F401
+        except ImportError:
+            self.skipTest("reportlab no esta instalado en este entorno")
+
+        data = {
+            "inicio": "2026-07-01",
+            "fin": "2026-07-07",
+            "filas_dia": [
+                {"fecha": f"2026-07-0{i}", "evento_txt": "", "reservas": i, "personas": i * 2, "mesas": i}
+                for i in range(1, 8)
+            ],
+            "bot": {
+                "mensajes": 12,
+                "inbound": 9,
+                "outbound": 3,
+                "humano": 1,
+                "chats": 7,
+                "horas_top": [{"hora": 13, "inbound": 4}],
+                "intents": [],
+            },
+            "totales": {
+                "reservas": 28,
+                "personas": 56,
+                "mesas": 28,
+                "salas": 0,
+                "telefonos_unicos": 20,
+                "canceladas": 0,
+                "eventos": 0,
+                "dias_con_reservas": 7,
+                "personas_por_reserva": 2,
+            },
+            "top_dia": {"fecha": "2026-07-07", "personas": 14, "reservas": 7},
+            "bajo_dia": {"fecha": "2026-07-01", "personas": 2, "reservas": 1},
+            "insights": ["Imagen de reporte generada."],
+        }
+
+        with TemporaryDirectory() as tmp:
+            original = reporte_semanal.REPORT_DIR
+            try:
+                reporte_semanal.REPORT_DIR = Path(tmp)
+                pdf = reporte_semanal.generar_pdf_reporte(data)
+                png = reporte_semanal.generar_imagen_reporte(pdf)
+            finally:
+                reporte_semanal.REPORT_DIR = original
+
+            self.assertTrue(png.exists())
+            self.assertGreater(png.stat().st_size, 1000)
+            self.assertEqual(png.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
 
     def test_generar_pdf_reporte_usa_membrete_si_pypdf_existe(self):
         try:

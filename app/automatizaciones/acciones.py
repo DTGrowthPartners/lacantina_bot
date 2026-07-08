@@ -721,7 +721,7 @@ ACCIONES_DISPONIBLES: dict[str, dict[str, Any]] = {
     },
     "reporte_semanal_pdf": {
         "handler": accion_reporte_semanal_pdf,
-        "descripcion": "Genera un PDF de 1 pagina con estadisticas semanales y lo envia por WhatsApp.",
+        "descripcion": "Genera reporte semanal visual y lo envia como imagen por WhatsApp.",
         "parametros": {
             "destino_id": "+57... o grupo @g.us",
             "periodo": "semana_anterior|ultimos_7_dias",
