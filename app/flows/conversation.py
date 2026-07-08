@@ -69,6 +69,24 @@ _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _INTENTS_ESCALACION_OBLIGATORIA = {"pide_humano", "queja"}
 
 
+def _normalizar_intent_por_reglas(
+    intent: str,
+    *,
+    solicitud_menu: bool,
+    contenido_usuario: str,
+    cliente_numero: str,
+) -> str:
+    """Reglas deterministas que tienen prioridad sobre el clasificador."""
+    if solicitud_menu and intent == "pide_estado":
+        log.warning(
+            "flow.intent_estado_anulado_por_menu",
+            cliente=cliente_numero,
+            texto=contenido_usuario[:120],
+        )
+        return "otro"
+    return intent
+
+
 def _asegurar_escalacion_humana(
     outbox: list[dict],
     *,
@@ -461,6 +479,13 @@ async def procesar_mensaje_inbound(
         log.info("flow.spam_ignorado", cliente=cliente_numero)
         return []
 
+    intent = _normalizar_intent_por_reglas(
+        intent,
+        solicitud_menu=solicitud_menu,
+        contenido_usuario=contenido_usuario,
+        cliente_numero=cliente_numero,
+    )
+
     if intent == "pide_estado":
         from app import promo_estado as _pe
         if _pe.cargar_estado() is not None:
@@ -646,6 +671,7 @@ async def procesar_mensaje_inbound(
     if ctx.get("enviar_video_como_llegar"):
         await _enviar_video_como_llegar(session, cliente_id, cliente_numero)
     if ctx.get("enviar_carta_link"):
+        ctx.pop("enviar_estado_actual", None)
         await _enviar_link_menu(session, cliente_id, cliente_numero)
     if ctx.get("enviar_plano_espacio"):
         await _enviar_plano_espacio(

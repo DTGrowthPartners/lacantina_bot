@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from app.claude.prompts import construir_system_prompt
-from app.flows.conversation import _enviar_link_menu
+from app.flows.conversation import _enviar_link_menu, _normalizar_intent_por_reglas
 from app.menu_media import MENU_URL, imagenes_menu, pide_imagen_menu, pide_menu
 
 
@@ -19,8 +19,19 @@ class MenuMediaTests(unittest.TestCase):
         self.assertTrue(pide_menu("cuanto vale el Old Parr"))
         self.assertTrue(pide_menu("qué cervezas tienen"))
         self.assertTrue(pide_menu("pásame la carta"))
+        self.assertTrue(pide_menu("Buenas tardes, me envía la carta porfa?"))
         self.assertTrue(pide_menu("tienen comida?"))
         self.assertFalse(pide_menu("qué eventos tienen este mes"))
+
+    def test_menu_tiene_prioridad_si_clasificador_lo_confunde_con_estado(self):
+        intent = _normalizar_intent_por_reglas(
+            "pide_estado",
+            solicitud_menu=True,
+            contenido_usuario="Buenas tardes, me envía la carta porfa?",
+            cliente_numero="+573001112233",
+        )
+
+        self.assertEqual(intent, "otro")
 
     def test_estan_las_tres_paginas_renderizadas(self):
         paginas = imagenes_menu()

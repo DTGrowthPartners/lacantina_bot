@@ -781,7 +781,8 @@ TOOL_DEFINITIONS: list[dict] = [
             "Envía al cliente la IMAGEN o VIDEO del estado/promo vigente de La Cantina "
             "(lo último que el equipo publicó en el estado de WhatsApp). Úsalo cuando el "
             "cliente pida 'el estado', 'la promo', 'la imagen/video que subieron', 'lo "
-            "que publicaron', el flyer de la promo, etc. Si NO hay un estado vigente "
+            "que publicaron', el flyer de la promo, etc. NO la uses si pide 'carta', "
+            "'menú', precios, bebidas o comida: en esos casos usa `enviar_carta`. Si NO hay un estado vigente "
             "guardado, la tool te lo dirá: en ese caso avísale con amabilidad que por "
             "ahora no hay una promo publicada. Acompaña el envío con un texto breve."
         ),
