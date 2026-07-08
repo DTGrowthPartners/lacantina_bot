@@ -37,6 +37,7 @@ dependencies = [
 
     # Imagen dinámica del plano (mesas reservadas con X roja)
     "Pillow>=10.0",
+    "fontawesomefree>=6.6.0",
     "reportlab>=4.2",
     "pypdf>=5.0",
 

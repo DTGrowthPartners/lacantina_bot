@@ -30,6 +30,20 @@ LETTERHEAD_PATH = (
 )
 DAY_LABELS = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
 DAY_LONG = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"]
+FA_SOLID_FONT = "FontAwesome6FreeSolid"
+FA_ICONS = {
+    "trend": "\uf201",  # chart-line
+    "calendar": "\uf274",  # calendar-check
+    "people": "\uf0c0",  # users
+    "user": "\uf007",
+    "chat": "\uf086",  # comments
+    "x": "\uf057",  # circle-xmark
+    "headset": "\uf590",
+    "trophy": "\uf091",
+    "calendar-off": "\uf273",  # calendar-xmark
+    "clock": "\uf017",
+    "bulb": "\uf0eb",
+}
 MONTHS = [
     "enero",
     "febrero",
@@ -371,7 +385,7 @@ def _draw_executive_report(c, data: dict[str, Any]) -> None:
         left + 82,
         584,
         [
-            ("Esta semana la Agente Nicky ayudo a generar ", "Helvetica", 12.4, navy),
+            ("Esta semana La Agente Nicky ayudo a generar ", "Helvetica", 12.4, navy),
             (str(totals["reservas"]), "Helvetica-Bold", 15, blue),
             (f" reservas para {totals['personas']} personas.", "Helvetica", 12.4, navy),
         ],
@@ -686,85 +700,40 @@ def _draw_circle_icon(c, cx: float, cy: float, radius: float, fill, icon: str, i
     _draw_icon(c, cx, cy, icon, icon_color or _money_color("#FFFFFF"), radius * 0.75)
 
 
+def _fontawesome_solid_font() -> str:
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    try:
+        pdfmetrics.getFont(FA_SOLID_FONT)
+        return FA_SOLID_FONT
+    except KeyError:
+        pass
+
+    import fontawesomefree
+
+    package_dir = Path(fontawesomefree.__file__).resolve().parent
+    font_path = package_dir / "static" / "fontawesomefree" / "webfonts" / "fa-solid-900.ttf"
+    if not font_path.exists():
+        matches = list(package_dir.rglob("fa-solid-900.ttf"))
+        if not matches:
+            raise FileNotFoundError("No se encontro fa-solid-900.ttf de fontawesomefree")
+        font_path = matches[0]
+    pdfmetrics.registerFont(TTFont(FA_SOLID_FONT, str(font_path)))
+    return FA_SOLID_FONT
+
+
 def _draw_icon(c, cx: float, cy: float, icon: str, color, size: float) -> None:
+    glyph = FA_ICONS.get(icon)
+    if not glyph:
+        return
+
+    font_name = _fontawesome_solid_font()
+    font_size = size * 1.08
     c.saveState()
-    c.setStrokeColor(color)
     c.setFillColor(color)
-    c.setLineWidth(max(1.4, size / 11))
-    if hasattr(c, "setLineCap"):
-        c.setLineCap(1)
-    if hasattr(c, "setLineJoin"):
-        c.setLineJoin(1)
-    s = size
-    if icon == "trend":
-        for i, h in enumerate([0.35, 0.55, 0.78]):
-            bx = cx - s * 0.52 + i * s * 0.34
-            c.roundRect(bx, cy - s * 0.58, s * 0.14, s * h, 1.2, fill=0, stroke=1)
-        c.line(cx - s * 0.5, cy - s * 0.18, cx - s * 0.18, cy + s * 0.08)
-        c.line(cx - s * 0.18, cy + s * 0.08, cx + s * 0.08, cy - s * 0.06)
-        c.line(cx + s * 0.08, cy - s * 0.06, cx + s * 0.52, cy + s * 0.48)
-        c.line(cx + s * 0.32, cy + s * 0.48, cx + s * 0.52, cy + s * 0.48)
-        c.line(cx + s * 0.52, cy + s * 0.48, cx + s * 0.52, cy + s * 0.28)
-    elif icon == "calendar":
-        c.roundRect(cx - s * 0.55, cy - s * 0.48, s * 1.1, s * 0.92, 3, fill=0, stroke=1)
-        c.line(cx - s * 0.55, cy + s * 0.16, cx + s * 0.55, cy + s * 0.16)
-        c.line(cx - s * 0.28, cy + s * 0.55, cx - s * 0.28, cy + s * 0.32)
-        c.line(cx + s * 0.28, cy + s * 0.55, cx + s * 0.28, cy + s * 0.32)
-        c.line(cx - s * 0.2, cy - s * 0.1, cx - s * 0.02, cy - s * 0.28)
-        c.line(cx - s * 0.02, cy - s * 0.28, cx + s * 0.3, cy + s * 0.1)
-    elif icon == "people":
-        c.circle(cx, cy + s * 0.25, s * 0.18, fill=0, stroke=1)
-        c.circle(cx - s * 0.42, cy + s * 0.12, s * 0.14, fill=0, stroke=1)
-        c.circle(cx + s * 0.42, cy + s * 0.12, s * 0.14, fill=0, stroke=1)
-        c.arc(cx - s * 0.36, cy - s * 0.48, cx + s * 0.36, cy + s * 0.05, 20, 140)
-        c.arc(cx - s * 0.72, cy - s * 0.48, cx - s * 0.12, cy - s * 0.02, 24, 132)
-        c.arc(cx + s * 0.12, cy - s * 0.48, cx + s * 0.72, cy - s * 0.02, 24, 132)
-    elif icon == "user":
-        c.circle(cx, cy + s * 0.2, s * 0.24, fill=0, stroke=1)
-        c.arc(cx - s * 0.45, cy - s * 0.58, cx + s * 0.45, cy + s * 0.16, 20, 140)
-    elif icon == "chat":
-        c.roundRect(cx - s * 0.58, cy - s * 0.22, s * 0.78, s * 0.48, 5, fill=0, stroke=1)
-        c.line(cx - s * 0.2, cy - s * 0.22, cx - s * 0.36, cy - s * 0.42)
-        c.roundRect(cx - s * 0.06, cy - s * 0.02, s * 0.64, s * 0.42, 5, fill=0, stroke=1)
-        c.line(cx + s * 0.26, cy - s * 0.02, cx + s * 0.42, cy - s * 0.22)
-        for dx in (-0.3, 0.0, 0.3):
-            c.circle(cx + s * dx, cy + s * 0.04, s * 0.035, fill=1, stroke=0)
-    elif icon == "x":
-        c.circle(cx, cy, s * 0.58, fill=0, stroke=1)
-        c.line(cx - s * 0.28, cy - s * 0.28, cx + s * 0.28, cy + s * 0.28)
-        c.line(cx - s * 0.28, cy + s * 0.28, cx + s * 0.28, cy - s * 0.28)
-    elif icon == "headset":
-        c.arc(cx - s * 0.55, cy - s * 0.35, cx + s * 0.55, cy + s * 0.65, 0, 180)
-        c.roundRect(cx - s * 0.65, cy - s * 0.17, s * 0.18, s * 0.36, 2, fill=0, stroke=1)
-        c.roundRect(cx + s * 0.47, cy - s * 0.17, s * 0.18, s * 0.36, 2, fill=0, stroke=1)
-        c.line(cx + s * 0.35, cy - s * 0.37, cx + s * 0.06, cy - s * 0.37)
-        c.circle(cx, cy - s * 0.37, s * 0.035, fill=1, stroke=0)
-    elif icon == "trophy":
-        c.line(cx - s * 0.3, cy + s * 0.34, cx + s * 0.3, cy + s * 0.34)
-        c.line(cx - s * 0.3, cy + s * 0.34, cx - s * 0.22, cy - s * 0.08)
-        c.line(cx + s * 0.3, cy + s * 0.34, cx + s * 0.22, cy - s * 0.08)
-        c.line(cx - s * 0.22, cy - s * 0.08, cx + s * 0.22, cy - s * 0.08)
-        c.line(cx - s * 0.1, cy - s * 0.1, cx - s * 0.04, cy - s * 0.45)
-        c.line(cx + s * 0.1, cy - s * 0.1, cx + s * 0.04, cy - s * 0.45)
-        c.line(cx - s * 0.3, cy - s * 0.45, cx + s * 0.3, cy - s * 0.45)
-        c.line(cx - s * 0.2, cy - s * 0.55, cx + s * 0.2, cy - s * 0.55)
-        c.arc(cx - s * 0.62, cy - s * 0.04, cx - s * 0.18, cy + s * 0.34, 245, 118)
-        c.arc(cx + s * 0.18, cy - s * 0.04, cx + s * 0.62, cy + s * 0.34, -3, 118)
-    elif icon == "calendar-off":
-        c.roundRect(cx - s * 0.5, cy - s * 0.45, s, s * 0.9, 2, fill=0, stroke=1)
-        c.line(cx - s * 0.5, cy + s * 0.18, cx + s * 0.5, cy + s * 0.18)
-        c.line(cx - s * 0.24, cy + s * 0.54, cx - s * 0.24, cy + s * 0.32)
-        c.line(cx + s * 0.24, cy + s * 0.54, cx + s * 0.24, cy + s * 0.32)
-        c.line(cx - s * 0.25, cy - s * 0.22, cx + s * 0.25, cy + s * 0.22)
-        c.line(cx - s * 0.25, cy + s * 0.22, cx + s * 0.25, cy - s * 0.22)
-    elif icon == "clock":
-        c.circle(cx, cy, s * 0.55, fill=0, stroke=1)
-        c.line(cx, cy, cx, cy + s * 0.32)
-        c.line(cx, cy, cx + s * 0.25, cy - s * 0.18)
-    elif icon == "bulb":
-        c.circle(cx, cy + s * 0.12, s * 0.36, fill=0, stroke=1)
-        c.line(cx - s * 0.2, cy - s * 0.2, cx + s * 0.2, cy - s * 0.2)
-        c.roundRect(cx - s * 0.16, cy - s * 0.45, s * 0.32, s * 0.17, 1.5, fill=0, stroke=1)
+    c.setFont(font_name, font_size)
+    c.drawCentredString(cx, cy - font_size * 0.36, glyph)
     c.restoreState()
 
 
