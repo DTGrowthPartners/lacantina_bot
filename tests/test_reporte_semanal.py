@@ -26,6 +26,13 @@ class ReporteSemanalTests(unittest.TestCase):
         self.assertEqual(inicio.isoformat(), "2026-07-01")
         self.assertEqual(fin.isoformat(), "2026-07-07")
 
+    def test_dia_label_muestra_dia_y_numero(self):
+        self.assertEqual(reporte_semanal._dia_label("2026-06-29"), "Lun 29")
+        self.assertEqual(
+            reporte_semanal._dia_label("2026-07-05", incluir_mes=True),
+            "Dom 05/07",
+        )
+
     def test_generar_pdf_reporte_crea_archivo_pdf(self):
         try:
             import reportlab  # noqa: F401
@@ -139,7 +146,7 @@ class ReporteSemanalTests(unittest.TestCase):
 
     def test_line_chart_dibuja_tramo_de_tendencia(self):
         try:
-            from reportlab.graphics.shapes import Line
+            from reportlab.graphics.shapes import Line, String
         except ImportError:
             self.skipTest("reportlab no esta instalado en este entorno")
 
@@ -155,6 +162,8 @@ class ReporteSemanalTests(unittest.TestCase):
 
         lineas = [item for item in drawing.contents if isinstance(item, Line)]
         self.assertGreaterEqual(len(lineas), 3)
+        textos = [item.text for item in drawing.contents if isinstance(item, String)]
+        self.assertIn("Mie 01", textos)
 
 
 class ReporteSemanalMetricasTests(unittest.IsolatedAsyncioTestCase):

@@ -28,6 +28,7 @@ LETTERHEAD_PATH = (
     / "pdf"
     / "Membrete_DTGP_Portada_enblanco.pdf"
 )
+DAY_LABELS = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
 
 
 def rango_reporte(periodo: str | None = None, ahora: datetime | None = None) -> tuple[date, date, str]:
@@ -47,6 +48,13 @@ def rango_reporte(periodo: str | None = None, ahora: datetime | None = None) -> 
 def _dias(inicio: date, fin: date) -> list[date]:
     total = (fin - inicio).days
     return [inicio + timedelta(days=i) for i in range(total + 1)]
+
+
+def _dia_label(fecha: str | date, *, incluir_mes: bool = False) -> str:
+    dia = date.fromisoformat(fecha) if isinstance(fecha, str) else fecha
+    if incluir_mes:
+        return f"{DAY_LABELS[dia.weekday()]} {dia.day:02d}/{dia.month:02d}"
+    return f"{DAY_LABELS[dia.weekday()]} {dia.day:02d}"
 
 
 def _payload(resp: dict) -> dict:
@@ -227,7 +235,7 @@ def _insights(filas: list[dict[str, Any]], bot: dict[str, Any]) -> list[str]:
     if top and top["personas"]:
         etiqueta = top["evento_txt"] or "dia normal"
         insights.append(
-            f"El pico fue {top['fecha']} ({etiqueta}) con {top['personas']} personas."
+            f"El pico fue {_dia_label(top['fecha'])} ({etiqueta}) con {top['personas']} personas."
         )
     horas = bot.get("horas_top") or []
     if horas:
@@ -270,7 +278,11 @@ def generar_pdf_reporte(data: dict[str, Any]) -> Path:
     bot = data["bot"]
     story: list[Any] = [
         Paragraph("La Cantina Plus - reporte semanal", title),
-        Paragraph(f"Periodo: {inicio} a {fin} - generado automaticamente por Nicky", small),
+        Paragraph(
+            f"Semana completa: {_dia_label(inicio, incluir_mes=True)} a "
+            f"{_dia_label(fin, incluir_mes=True)} - generado automaticamente por Nicky",
+            small,
+        ),
         Spacer(1, 8),
     ]
 
@@ -291,8 +303,8 @@ def generar_pdf_reporte(data: dict[str, Any]) -> Path:
     horas = ", ".join(f"{int(h['hora']):02d}:00 ({h['inbound']})" for h in bot.get("horas_top", [])) or "sin datos"
     intents = ", ".join(f"{i['intent']} ({i['total']})" for i in bot.get("intents", [])[:4]) or "sin datos"
     resumen_rows = [
-        ["Mejor dia", f"{top.get('fecha', '-')} - {top.get('personas', 0)} personas - {top.get('reservas', 0)} reservas"],
-        ["Dia mas bajo", f"{bajo.get('fecha', '-')} - {bajo.get('personas', 0)} personas"],
+        ["Mejor dia", f"{_dia_label(top['fecha']) if top.get('fecha') else '-'} - {top.get('personas', 0)} personas - {top.get('reservas', 0)} reservas"],
+        ["Dia mas bajo", f"{_dia_label(bajo['fecha']) if bajo.get('fecha') else '-'} - {bajo.get('personas', 0)} personas"],
         ["Horas inbound", horas],
         ["Temas frecuentes", intents],
     ]
@@ -378,7 +390,8 @@ def _line_chart(filas: list[dict[str, Any]], *, width: float, height: float):
         value = int(fila.get("personas") or 0)
         x = left + step * idx
         y = bottom + (value / scale_max * chart_h if scale_max else 0)
-        fecha = str(fila.get("fecha") or "")[-5:]
+        fecha_raw = str(fila.get("fecha") or "")
+        fecha = _dia_label(fecha_raw) if fecha_raw else ""
         points.append((x, y, value, fecha))
 
     for (x1, y1, *_), (x2, y2, *__) in zip(points, points[1:]):
