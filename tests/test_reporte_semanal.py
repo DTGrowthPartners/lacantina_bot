@@ -85,6 +85,58 @@ class ReporteSemanalTests(unittest.TestCase):
             self.assertGreater(pdf.stat().st_size, 1000)
             self.assertEqual(pdf.read_bytes()[:4], b"%PDF")
 
+    def test_generar_pdf_reporte_usa_membrete_si_pypdf_existe(self):
+        try:
+            import pypdf  # noqa: F401
+            import reportlab  # noqa: F401
+        except ImportError:
+            self.skipTest("pypdf/reportlab no estan instalados en este entorno")
+        if not reporte_semanal.LETTERHEAD_PATH.exists():
+            self.skipTest("membrete no esta disponible")
+
+        data = {
+            "inicio": "2026-07-01",
+            "fin": "2026-07-07",
+            "filas_dia": [
+                {"fecha": f"2026-07-0{i}", "evento_txt": "", "reservas": i, "personas": i * 3, "mesas": i}
+                for i in range(1, 8)
+            ],
+            "bot": {
+                "mensajes": 10,
+                "inbound": 8,
+                "outbound": 2,
+                "humano": 0,
+                "chats": 6,
+                "horas_top": [],
+                "intents": [],
+            },
+            "totales": {
+                "reservas": 28,
+                "personas": 84,
+                "mesas": 28,
+                "salas": 0,
+                "telefonos_unicos": 20,
+                "canceladas": 0,
+                "eventos": 0,
+                "dias_con_reservas": 7,
+                "personas_por_reserva": 3,
+            },
+            "top_dia": {"fecha": "2026-07-07", "personas": 21, "reservas": 7},
+            "bajo_dia": {"fecha": "2026-07-01", "personas": 3, "reservas": 1},
+            "insights": ["La tendencia semanal quedo renderizada sobre el membrete."],
+        }
+
+        with TemporaryDirectory() as tmp:
+            original = reporte_semanal.REPORT_DIR
+            try:
+                reporte_semanal.REPORT_DIR = Path(tmp)
+                pdf = reporte_semanal.generar_pdf_reporte(data)
+            finally:
+                reporte_semanal.REPORT_DIR = original
+
+            self.assertTrue(pdf.exists())
+            self.assertGreater(pdf.stat().st_size, 100_000)
+
     def test_line_chart_dibuja_tramo_de_tendencia(self):
         try:
             from reportlab.graphics.shapes import Line

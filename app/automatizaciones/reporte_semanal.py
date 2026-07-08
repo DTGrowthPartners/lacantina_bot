@@ -22,6 +22,12 @@ from app.whapi.client import enviar_documento_bytes
 settings = get_settings()
 TZ = ZoneInfo(settings.tz or "America/Bogota")
 REPORT_DIR = Path(settings.data_dir) / "reportes" / "semanales"
+LETTERHEAD_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "assets"
+    / "pdf"
+    / "Membrete_DTGP_Portada_enblanco.pdf"
+)
 
 
 def rango_reporte(periodo: str | None = None, ahora: datetime | None = None) -> tuple[date, date, str]:
@@ -244,14 +250,15 @@ def generar_pdf_reporte(data: dict[str, Any]) -> Path:
     inicio = data["inicio"]
     fin = data["fin"]
     path = REPORT_DIR / f"reporte-semanal-{inicio}_a_{fin}.pdf"
+    content_path = REPORT_DIR / f"reporte-semanal-{inicio}_a_{fin}-contenido.pdf"
 
     doc = SimpleDocTemplate(
-        str(path),
+        str(content_path),
         pagesize=letter,
         rightMargin=0.45 * inch,
         leftMargin=0.45 * inch,
-        topMargin=0.42 * inch,
-        bottomMargin=0.38 * inch,
+        topMargin=1.48 * inch,
+        bottomMargin=0.82 * inch,
     )
     styles = getSampleStyleSheet()
     title = ParagraphStyle("title", parent=styles["Title"], fontSize=18, leading=20, textColor=colors.HexColor("#111827"))
@@ -298,7 +305,35 @@ def generar_pdf_reporte(data: dict[str, Any]) -> Path:
     story.append(Paragraph(bullets, body))
 
     doc.build(story)
+    _aplicar_membrete(content_path, path)
+    try:
+        content_path.unlink()
+    except OSError:
+        log.warning("reporte_semanal.temp_no_eliminado", path=str(content_path))
     return path
+
+
+def _aplicar_membrete(content_path: Path, output_path: Path) -> None:
+    if not LETTERHEAD_PATH.exists():
+        log.warning("reporte_semanal.membrete_no_encontrado", path=str(LETTERHEAD_PATH))
+        content_path.replace(output_path)
+        return
+
+    try:
+        from pypdf import PdfReader, PdfWriter
+
+        content_reader = PdfReader(str(content_path))
+        writer = PdfWriter(clone_from=str(LETTERHEAD_PATH))
+        for idx, content_page in enumerate(content_reader.pages):
+            if idx >= len(writer.pages):
+                writer.add_blank_page(width=content_page.mediabox.width, height=content_page.mediabox.height)
+            page = writer.pages[idx]
+            page.merge_page(content_page)
+        with output_path.open("wb") as fh:
+            writer.write(fh)
+    except Exception as exc:
+        log.warning("reporte_semanal.membrete_fail", error=str(exc)[:200])
+        content_path.replace(output_path)
 
 
 def _line_chart(filas: list[dict[str, Any]], *, width: float, height: float):
