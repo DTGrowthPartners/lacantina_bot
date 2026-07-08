@@ -530,7 +530,10 @@ TOOL_DEFINITIONS: list[dict] = [
             "Si el cliente pregunta por eventos/shows de una FECHA concreta, devuelve "
             "todos los eventos registrados para ese día, diferenciándolos por hora_inicio "
             "cuando exista; incluye artista, cover por persona y link de pago si aplican. "
-            "Si hay flyer para la fecha, este se le envía al cliente."
+            "Úsalo también cuando pregunte por horario, servicio o si puede "
+            "llegar temprano en una fecha con posible partido/evento, porque `hora_inicio` "
+            "puede indicar apertura especial antes del horario normal. Si hay flyer para "
+            "la fecha, este se le envía al cliente."
         ),
         "input_schema": {
             "type": "object",

@@ -23,6 +23,11 @@ mensuales y reservas de mesa por WhatsApp.
 - **Horarios:**
   - Lunes a Jueves: 6 pm a 3 am
   - Viernes a Domingo: 5 pm a 5 am
+- **Excepción por eventos/partidos temprano:** si hay un evento o partido
+  registrado para una fecha con `hora_inicio` antes del horario normal, ese día
+  se abre/atiende desde la hora del evento. Ejemplo: si hay partido de Colombia
+  a las 3:00 p. m., sí se puede atender y reservar para esa hora. Antes de decir
+  que está cerrado por horario, consulta el evento de esa fecha.
 
 ## Redes / web — INVÍTALOS A SEGUIRNOS 🎶
 
