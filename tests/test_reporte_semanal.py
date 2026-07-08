@@ -85,6 +85,25 @@ class ReporteSemanalTests(unittest.TestCase):
             self.assertGreater(pdf.stat().st_size, 1000)
             self.assertEqual(pdf.read_bytes()[:4], b"%PDF")
 
+    def test_line_chart_dibuja_tramo_de_tendencia(self):
+        try:
+            from reportlab.graphics.shapes import Line
+        except ImportError:
+            self.skipTest("reportlab no esta instalado en este entorno")
+
+        drawing = reporte_semanal._line_chart(
+            [
+                {"fecha": "2026-07-01", "personas": 0},
+                {"fecha": "2026-07-02", "personas": 12},
+                {"fecha": "2026-07-03", "personas": 6},
+            ],
+            width=420,
+            height=160,
+        )
+
+        lineas = [item for item in drawing.contents if isinstance(item, Line)]
+        self.assertGreaterEqual(len(lineas), 3)
+
 
 class ReporteSemanalMetricasTests(unittest.IsolatedAsyncioTestCase):
     async def test_metricas_bot_envia_fechas_como_date(self):

@@ -275,17 +275,8 @@ def generar_pdf_reporte(data: dict[str, Any]) -> Path:
     story.append(_table(kpis, col_widths=[1.0 * inch, 0.8 * inch] * 3, font_size=8.4, header=False))
     story.append(Spacer(1, 8))
 
-    story.append(Paragraph("Reservas por dia", h2))
-    rows = [["Fecha", "Tipo", "Reservas", "Personas", "Mesas"]]
-    for f in data["filas_dia"]:
-        rows.append([
-            f["fecha"],
-            (f["evento_txt"] or "Normal")[:32],
-            str(f["reservas"]),
-            str(f["personas"]),
-            str(f["mesas"]),
-        ])
-    story.append(_table(rows, col_widths=[0.95 * inch, 2.55 * inch, 0.75 * inch, 0.75 * inch, 0.65 * inch], font_size=7.4))
+    story.append(Paragraph("Tendencia semanal", h2))
+    story.append(_line_chart(data["filas_dia"], width=6.55 * inch, height=2.35 * inch))
     story.append(Spacer(1, 6))
 
     top = data["top_dia"]
@@ -308,6 +299,64 @@ def generar_pdf_reporte(data: dict[str, Any]) -> Path:
 
     doc.build(story)
     return path
+
+
+def _line_chart(filas: list[dict[str, Any]], *, width: float, height: float):
+    from reportlab.lib import colors
+    from reportlab.graphics.shapes import Circle, Drawing, Line, Rect, String
+
+    drawing = Drawing(width, height)
+    left = 34
+    right = 12
+    top = 18
+    bottom = 32
+    chart_w = width - left - right
+    chart_h = height - top - bottom
+    values = [int(f.get("personas") or 0) for f in filas]
+    max_value = max(values or [0])
+    scale_max = max(10, ((max_value + 9) // 10) * 10)
+    avg = sum(values) / len(values) if values else 0
+
+    drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#F9FAFB"), strokeColor=colors.HexColor("#E5E7EB")))
+    drawing.add(String(left, height - 10, "Personas reservadas por dia", fontName="Helvetica-Bold", fontSize=8.5, fillColor=colors.HexColor("#111827")))
+    drawing.add(String(width - 104, height - 10, "Linea azul: demanda", fontName="Helvetica", fontSize=7.2, fillColor=colors.HexColor("#2563EB")))
+
+    # Grid and y labels.
+    for i in range(5):
+        y = bottom + (chart_h * i / 4)
+        valor = int(scale_max * i / 4)
+        drawing.add(Line(left, y, width - right, y, strokeColor=colors.HexColor("#E5E7EB"), strokeWidth=0.5))
+        drawing.add(String(6, y - 3, str(valor), fontName="Helvetica", fontSize=6.8, fillColor=colors.HexColor("#6B7280")))
+
+    if values:
+        avg_y = bottom + (avg / scale_max * chart_h)
+        dash = 4
+        x = left
+        while x < width - right:
+            drawing.add(Line(x, avg_y, min(x + dash, width - right), avg_y, strokeColor=colors.HexColor("#F59E0B"), strokeWidth=0.75))
+            x += dash * 2
+        drawing.add(String(width - 92, avg_y + 3, f"Prom. {avg:.0f}", fontName="Helvetica", fontSize=6.8, fillColor=colors.HexColor("#B45309")))
+
+    step = chart_w / max(1, len(filas) - 1)
+    points: list[tuple[float, float, int, str]] = []
+    for idx, fila in enumerate(filas):
+        value = int(fila.get("personas") or 0)
+        x = left + step * idx
+        y = bottom + (value / scale_max * chart_h if scale_max else 0)
+        fecha = str(fila.get("fecha") or "")[-5:]
+        points.append((x, y, value, fecha))
+
+    for (x1, y1, *_), (x2, y2, *__) in zip(points, points[1:]):
+        drawing.add(Line(x1, y1, x2, y2, strokeColor=colors.HexColor("#2563EB"), strokeWidth=2.2))
+
+    for x, y, value, fecha in points:
+        drawing.add(Circle(x, y, 3.1, fillColor=colors.HexColor("#2563EB"), strokeColor=colors.white, strokeWidth=0.8))
+        drawing.add(String(x - 7, y + 7, str(value), fontName="Helvetica-Bold", fontSize=7, fillColor=colors.HexColor("#111827")))
+        drawing.add(String(x - 12, 12, fecha, fontName="Helvetica", fontSize=7, fillColor=colors.HexColor("#4B5563")))
+
+    drawing.add(Line(left, bottom, left, bottom + chart_h, strokeColor=colors.HexColor("#9CA3AF"), strokeWidth=0.75))
+    drawing.add(Line(left, bottom, width - right, bottom, strokeColor=colors.HexColor("#9CA3AF"), strokeWidth=0.75))
+    return drawing
 
 
 def _table(rows: list[list[str]], *, col_widths: list[float], font_size: float, header: bool = True):
