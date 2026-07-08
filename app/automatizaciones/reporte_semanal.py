@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean
@@ -29,6 +28,21 @@ LETTERHEAD_PATH = (
     / "Membrete_DTGP_Portada_enblanco.pdf"
 )
 DAY_LABELS = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+DAY_LONG = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"]
+MONTHS = [
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+]
 
 
 def rango_reporte(periodo: str | None = None, ahora: datetime | None = None) -> tuple[date, date, str]:
@@ -247,12 +261,9 @@ def _insights(filas: list[dict[str, Any]], bot: dict[str, Any]) -> list[str]:
 
 
 def generar_pdf_reporte(data: dict[str, Any]) -> Path:
-    """Genera un PDF de una sola pagina con el resumen semanal."""
-    from reportlab.lib import colors
+    """Genera un PDF ejecutivo de una sola pagina con el resumen semanal."""
     from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import inch
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.pdfgen import canvas
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     inicio = data["inicio"]
@@ -260,69 +271,456 @@ def generar_pdf_reporte(data: dict[str, Any]) -> Path:
     path = REPORT_DIR / f"reporte-semanal-{inicio}_a_{fin}.pdf"
     content_path = REPORT_DIR / f"reporte-semanal-{inicio}_a_{fin}-contenido.pdf"
 
-    doc = SimpleDocTemplate(
-        str(content_path),
-        pagesize=letter,
-        rightMargin=0.45 * inch,
-        leftMargin=0.45 * inch,
-        topMargin=1.48 * inch,
-        bottomMargin=0.82 * inch,
-    )
-    styles = getSampleStyleSheet()
-    title = ParagraphStyle("title", parent=styles["Title"], fontSize=18, leading=20, textColor=colors.HexColor("#111827"))
-    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=10.5, leading=12, textColor=colors.HexColor("#111827"), spaceAfter=5)
-    body = ParagraphStyle("body", parent=styles["BodyText"], fontSize=8.2, leading=10, textColor=colors.HexColor("#374151"))
-    small = ParagraphStyle("small", parent=styles["BodyText"], fontSize=7.4, leading=8.8, textColor=colors.HexColor("#4B5563"))
-
-    totals = data["totales"]
-    bot = data["bot"]
-    story: list[Any] = [
-        Paragraph("La Cantina Plus - reporte semanal", title),
-        Paragraph(
-            f"Semana completa: {_dia_label(inicio, incluir_mes=True)} a "
-            f"{_dia_label(fin, incluir_mes=True)} - generado automaticamente por Nicky",
-            small,
-        ),
-        Spacer(1, 8),
-    ]
-
-    kpis = [
-        ["Reservas", str(totals["reservas"]), "Personas", str(totals["personas"]), "Chats", str(bot["chats"])],
-        ["Mesas ocup.", str(totals["mesas"]), "Ticket pers/res.", str(totals["personas_por_reserva"]), "Inbound", str(bot["inbound"])],
-        ["Eventos", str(totals["eventos"]), "Canceladas", str(totals["canceladas"]), "Humano", str(bot["humano"])],
-    ]
-    story.append(_table(kpis, col_widths=[1.0 * inch, 0.8 * inch] * 3, font_size=8.4, header=False))
-    story.append(Spacer(1, 8))
-
-    story.append(Paragraph("Tendencia semanal", h2))
-    story.append(_line_chart(data["filas_dia"], width=6.55 * inch, height=2.35 * inch))
-    story.append(Spacer(1, 6))
-
-    top = data["top_dia"]
-    bajo = data["bajo_dia"]
-    horas = ", ".join(f"{int(h['hora']):02d}:00 ({h['inbound']})" for h in bot.get("horas_top", [])) or "sin datos"
-    intents = ", ".join(f"{i['intent']} ({i['total']})" for i in bot.get("intents", [])[:4]) or "sin datos"
-    resumen_rows = [
-        ["Mejor dia", f"{_dia_label(top['fecha']) if top.get('fecha') else '-'} - {top.get('personas', 0)} personas - {top.get('reservas', 0)} reservas"],
-        ["Dia mas bajo", f"{_dia_label(bajo['fecha']) if bajo.get('fecha') else '-'} - {bajo.get('personas', 0)} personas"],
-        ["Horas inbound", horas],
-        ["Temas frecuentes", intents],
-    ]
-    story.append(Paragraph("Lectura rapida", h2))
-    story.append(_table(resumen_rows, col_widths=[1.25 * inch, 5.0 * inch], font_size=7.7, header=False))
-    story.append(Spacer(1, 6))
-
-    story.append(Paragraph("Insights y acciones sugeridas", h2))
-    bullets = "<br/>".join(f"- {txt}" for txt in data["insights"])
-    story.append(Paragraph(bullets, body))
-
-    doc.build(story)
+    c = canvas.Canvas(str(content_path), pagesize=letter)
+    _draw_executive_report(c, data)
+    c.save()
     _aplicar_membrete(content_path, path)
     try:
         content_path.unlink()
     except OSError:
         log.warning("reporte_semanal.temp_no_eliminado", path=str(content_path))
     return path
+
+
+def _periodo_largo(inicio: str, fin: str) -> str:
+    ini = date.fromisoformat(inicio)
+    end = date.fromisoformat(fin)
+    return (
+        f"{DAY_LONG[ini.weekday()]} {ini.day:02d} de {MONTHS[ini.month - 1]} a "
+        f"{DAY_LONG[end.weekday()]} {end.day:02d} de {MONTHS[end.month - 1]} de {end.year}"
+    )
+
+
+def _money_color(hex_value: str):
+    from reportlab.lib import colors
+
+    return colors.HexColor(hex_value)
+
+
+def _draw_executive_report(c, data: dict[str, Any]) -> None:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+
+    width, height = letter
+    navy = colors.HexColor("#061B3A")
+    blue = colors.HexColor("#004FB6")
+    light_blue = colors.HexColor("#EEF6FF")
+    border = colors.HexColor("#CAD7EA")
+    grey = colors.HexColor("#5B6472")
+    orange = colors.HexColor("#F05A14")
+    green = colors.HexColor("#0B8F3A")
+    yellow = colors.HexColor("#D9A300")
+
+    totals = data["totales"]
+    bot = data["bot"]
+    filas = data["filas_dia"]
+    top = data["top_dia"] or {}
+    second = _segundo_dia(filas, top)
+    sin_reserva = [f for f in filas if int(f.get("reservas") or 0) == 0]
+    dias_mov = len(filas) - len(sin_reserva)
+    horas_top = bot.get("horas_top") or []
+
+    # Cover body and footer from the letterhead, keeping the DTGP blue header.
+    c.setFillColor(colors.white)
+    c.rect(0, 0, width, 700, fill=1, stroke=0)
+
+    left = 28
+    right = 584
+    c.setFillColor(navy)
+    c.setFont("Helvetica-Bold", 27)
+    c.drawString(left, 662, "Reporte semanal - agente Nicky")
+    c.setFont("Helvetica-Bold", 18)
+    c.setFillColor(blue)
+    c.drawString(left, 639, "La Cantina Plus")
+    c.setFont("Helvetica", 9.5)
+    c.setFillColor(grey)
+    c.drawString(left, 623, f"Periodo: {_periodo_largo(data['inicio'], data['fin'])}")
+
+    _rounded_box(c, left, 548, right - left, 58, radius=7, fill=colors.white, stroke=border)
+    _draw_circle_icon(c, left + 40, 577, 25, blue, "trend")
+    _draw_segments(
+        c,
+        left + 82,
+        584,
+        [
+            ("Esta semana el agente Nicky ayudo a generar ", "Helvetica", 12.4, navy),
+            (str(totals["reservas"]), "Helvetica-Bold", 15, blue),
+            (f" reservas para {totals['personas']} personas.", "Helvetica", 12.4, navy),
+        ],
+    )
+    _draw_segments(
+        c,
+        left + 82,
+        565,
+        [
+            ("La actividad se concentro en ", "Helvetica", 12.4, navy),
+            (str(dias_mov), "Helvetica-Bold", 15, blue),
+            (" dias y hubo ", "Helvetica", 12.4, navy),
+            (str(len(sin_reserva)), "Helvetica-Bold", 15, blue),
+            (" dias sin reservas.", "Helvetica", 12.4, navy),
+        ],
+    )
+
+    _section_title(c, "Resumen rapido", left, 523, navy)
+    card_y = 430
+    gap = 10
+    card_w = (right - left - gap * 5) / 6
+    metric_cards = [
+        ("Reservas", totals["reservas"], "calendar", blue),
+        ("Personas", totals["personas"], "people", blue),
+        ("Promedio por reserva", totals["personas_por_reserva"], "user", blue),
+        ("Chats atendidos", bot["chats"], "chat", blue),
+        ("Cancelaciones", totals["canceladas"], "x", orange),
+        ("Atenciones humanas", bot["humano"], "headset", blue),
+    ]
+    for idx, (label, value, icon, color) in enumerate(metric_cards):
+        x = left + idx * (card_w + gap)
+        _metric_card(c, x, card_y, card_w, 82, label, str(value), icon, color)
+
+    _section_title(c, "Lo que debes ver rapido", left, 407, navy)
+    high_y = 300
+    high_gap = 9
+    high_w = (right - left - high_gap * 3) / 4
+    zero_txt = ", ".join(_dia_label(f["fecha"]) for f in sin_reserva[:5]) or "Sin dias vacios"
+    if len(sin_reserva) > 5:
+        zero_txt += "..."
+    horas_txt = _horas_humanas(horas_top[:3])
+    highlights = [
+        ("Mejor dia", _dia_largo_corto(top.get("fecha")), f"{top.get('personas', 0)} personas - {top.get('reservas', 0)} reservas", "trophy", green, colors.HexColor("#EEFBF2")),
+        ("Segundo mejor dia", _dia_largo_corto(second.get("fecha")), f"{second.get('personas', 0)} personas - {second.get('reservas', 0)} reservas", "trend", blue, colors.HexColor("#EFF6FF")),
+        ("Dias sin reservas", f"{len(sin_reserva)} de {len(filas)} dias", zero_txt, "calendar-off", orange, colors.HexColor("#FFF7ED")),
+        ("Horas con mas mensajes", horas_txt[0], horas_txt[1], "clock", yellow, colors.HexColor("#FFFBEB")),
+    ]
+    for idx, item in enumerate(highlights):
+        x = left + idx * (high_w + high_gap)
+        _highlight_card(c, x, high_y, high_w, 92, *item)
+
+    _section_title(c, "Comportamiento por dia", left, 283, navy)
+    chart_x, chart_y, chart_w, chart_h = left, 145, 315, 126
+    table_x, table_y, table_w, table_h = left + 325, 145, 231, 126
+    _bar_chart(c, filas, chart_x, chart_y, chart_w, chart_h, blue)
+    _daily_table(c, filas, table_x, table_y, table_w, table_h, blue, green)
+
+    _section_title(c, "Conclusiones de la semana", left, 127, navy)
+    _rounded_box(c, left, 48, right - left, 66, radius=7, fill=colors.white, stroke=border)
+    _draw_circle_icon(c, left + 38, 81, 24, colors.HexColor("#DCEBFF"), "bulb", blue)
+    bullets = _conclusiones(data, top, second, sin_reserva, horas_top)
+    c.setFont("Helvetica", 8.7)
+    c.setFillColor(navy)
+    y = 96
+    for bullet in bullets[:4]:
+        c.setFillColor(blue)
+        c.circle(left + 82, y + 2, 2.3, fill=1, stroke=0)
+        c.setFillColor(navy)
+        c.drawString(left + 95, y, bullet)
+        y -= 13
+
+    c.setStrokeColor(blue)
+    c.setLineWidth(0.7)
+    c.line(left, 37, right, 37)
+    c.setFillColor(blue)
+    c.setFont("Helvetica", 12)
+    c.drawCentredString(width / 2, 23, "Impulsamos crecimiento con estrategia, tecnologia y ejecucion.")
+    c.setFillColor(colors.HexColor("#7A8290"))
+    c.setFont("Helvetica", 8.5)
+    c.drawCentredString(width / 2, 10, "dtgrowthpartners.com | +57 300 7189383 | dairotraslavina.com")
+
+
+def _segundo_dia(filas: list[dict[str, Any]], top: dict[str, Any]) -> dict[str, Any]:
+    ordenados = sorted(filas, key=lambda f: (int(f.get("personas") or 0), int(f.get("reservas") or 0)), reverse=True)
+    top_fecha = top.get("fecha")
+    for fila in ordenados:
+        if fila.get("fecha") != top_fecha:
+            return fila
+    return {}
+
+
+def _dia_largo_corto(fecha: str | None) -> str:
+    if not fecha:
+        return "Sin datos"
+    dia = date.fromisoformat(fecha)
+    return f"{DAY_LONG[dia.weekday()]} {dia.day:02d} de {MONTHS[dia.month - 1]}"
+
+
+def _horas_humanas(rows: list[dict[str, Any]]) -> tuple[str, str]:
+    if not rows:
+        return "Sin datos", ""
+    partes = [_hora_12(int(r["hora"])) for r in rows[:3]]
+    if len(partes) == 1:
+        return partes[0], ""
+    return ", ".join(partes[:-1]), f"y {partes[-1]}"
+
+
+def _hora_12(hora: int) -> str:
+    sufijo = "a. m." if hora < 12 else "p. m."
+    h = hora % 12 or 12
+    return f"{h}:00 {sufijo}"
+
+
+def _conclusiones(
+    data: dict[str, Any],
+    top: dict[str, Any],
+    second: dict[str, Any],
+    sin_reserva: list[dict[str, Any]],
+    horas_top: list[dict[str, Any]],
+) -> list[str]:
+    top_txt = DAY_LONG[date.fromisoformat(top["fecha"]).weekday()].lower() if top.get("fecha") else "el mejor dia"
+    second_txt = DAY_LONG[date.fromisoformat(second["fecha"]).weekday()].lower() if second.get("fecha") else "otro dia"
+    horas = ", ".join(_hora_12(int(h["hora"])) for h in horas_top[:3]) or "sin datos"
+    return [
+        f"Las reservas se concentraron en {top_txt} y {second_txt}.",
+        f"{len(sin_reserva)} de los {len(data['filas_dia'])} dias no tuvieron reservas.",
+        f"Los mejores horarios para activar comunicacion fueron {horas}.",
+        "Conviene reforzar mensajes, pauta o recordatorios en los dias sin reservas.",
+    ]
+
+
+def _section_title(c, text: str, x: float, y: float, color) -> None:
+    c.setFillColor(color)
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(x, y, text)
+
+
+def _rounded_box(c, x: float, y: float, w: float, h: float, *, radius: float, fill, stroke) -> None:
+    c.setFillColor(fill)
+    c.setStrokeColor(stroke)
+    c.setLineWidth(0.6)
+    c.roundRect(x, y, w, h, radius, fill=1, stroke=1)
+
+
+def _metric_card(c, x: float, y: float, w: float, h: float, label: str, value: str, icon: str, color) -> None:
+    from reportlab.lib import colors
+
+    _rounded_box(c, x, y, w, h, radius=7, fill=colors.white, stroke=colors.HexColor("#DDE3EC"))
+    _draw_icon(c, x + w / 2, y + 58, icon, color, 18)
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica", 7.8 if len(label) > 16 else 8.7)
+    c.drawCentredString(x + w / 2, y + 34, label)
+    c.setFillColor(color)
+    c.setFont("Helvetica-Bold", 22)
+    c.drawCentredString(x + w / 2, y + 12, value)
+
+
+def _highlight_card(
+    c,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    title: str,
+    main: str,
+    sub: str,
+    icon: str,
+    color,
+    fill,
+) -> None:
+    from reportlab.lib import colors
+
+    _rounded_box(c, x, y, w, h, radius=7, fill=fill, stroke=colors.Color(color.red, color.green, color.blue, alpha=0.25))
+    _draw_circle_icon(c, x + w / 2, y + h - 24, 19, colors.Color(color.red, color.green, color.blue, alpha=0.12), icon, color)
+    c.setFillColor(color)
+    c.setFont("Helvetica-Bold", 8.5)
+    c.drawCentredString(x + w / 2, y + 43, title)
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 10.5)
+    c.drawCentredString(x + w / 2, y + 27, main[:25])
+    c.setFont("Helvetica", 8.2)
+    for idx, line in enumerate(_split_center(sub, 28)[:2]):
+        c.drawCentredString(x + w / 2, y + 13 - idx * 10, line)
+
+
+def _split_center(text: str, max_chars: int) -> list[str]:
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) > max_chars and current:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines or [""]
+
+
+def _draw_segments(c, x: float, y: float, segments: list[tuple[str, str, float, Any]]) -> None:
+    current = x
+    for text, font, size, color in segments:
+        c.setFont(font, size)
+        c.setFillColor(color)
+        c.drawString(current, y, text)
+        current += c.stringWidth(text, font, size)
+
+
+def _bar_chart(c, filas: list[dict[str, Any]], x: float, y: float, w: float, h: float, blue) -> None:
+    from reportlab.lib import colors
+
+    _rounded_box(c, x, y, w, h, radius=6, fill=colors.white, stroke=colors.HexColor("#DDE3EC"))
+    left = x + 28
+    bottom = y + 28
+    top = y + h - 28
+    right = x + w - 12
+    chart_h = top - bottom
+    values = [int(f.get("personas") or 0) for f in filas]
+    max_value = max(values or [0])
+    scale_max = max(10, ((max_value + 39) // 40) * 40)
+    avg = sum(values) / len(values) if values else 0
+
+    c.setFont("Helvetica-Bold", 7.5)
+    c.setFillColor(colors.black)
+    c.drawString(x + 36, y + h - 15, "Personas reservadas por dia")
+    c.setFillColor(blue)
+    c.setFont("Helvetica", 7)
+    c.drawRightString(right, y + h - 15, f"--- Promedio semanal: {avg:.0f}")
+
+    c.setStrokeColor(colors.HexColor("#D7DEE8"))
+    c.setLineWidth(0.4)
+    for i in range(5):
+        yy = bottom + chart_h * i / 4
+        val = int(scale_max * i / 4)
+        c.line(left, yy, right, yy)
+        c.setFillColor(colors.HexColor("#5B6472"))
+        c.setFont("Helvetica", 6.5)
+        c.drawRightString(left - 8, yy - 2, str(val))
+
+    avg_y = bottom + (avg / scale_max * chart_h if scale_max else 0)
+    c.setStrokeColor(blue)
+    c.setDash(3, 2)
+    c.line(left, avg_y, right, avg_y)
+    c.setDash()
+
+    bar_gap = (right - left) / len(filas)
+    bar_w = min(18, bar_gap * 0.42)
+    for idx, fila in enumerate(filas):
+        value = int(fila.get("personas") or 0)
+        cx = left + bar_gap * idx + bar_gap / 2
+        bar_h = value / scale_max * chart_h if scale_max else 0
+        c.setFillColor(blue)
+        c.rect(cx - bar_w / 2, bottom, bar_w, bar_h, fill=1, stroke=0)
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica-Bold", 6.8)
+        c.drawCentredString(cx, bottom + bar_h + 5, str(value))
+        c.setFont("Helvetica-Bold", 6.8)
+        c.drawCentredString(cx, y + 10, _dia_label(fila["fecha"]))
+
+    c.setStrokeColor(colors.HexColor("#8A94A6"))
+    c.setLineWidth(0.5)
+    c.line(left, bottom, right, bottom)
+    c.line(left, bottom, left, top)
+
+
+def _daily_table(c, filas: list[dict[str, Any]], x: float, y: float, w: float, h: float, blue, green) -> None:
+    from reportlab.lib import colors
+
+    _rounded_box(c, x, y, w, h, radius=6, fill=colors.white, stroke=colors.HexColor("#DDE3EC"))
+    headers = ["Dia", "Personas", "Reservas", "Estado"]
+    col_w = [48, 50, 50, w - 148]
+    row_h = h / 8
+    c.setFillColor(blue)
+    c.roundRect(x, y + h - row_h, w, row_h, 5, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 7.2)
+    xx = x
+    for idx, header in enumerate(headers):
+        c.drawCentredString(xx + col_w[idx] / 2, y + h - row_h + 8, header)
+        xx += col_w[idx]
+
+    top = max(filas, key=lambda f: int(f.get("personas") or 0), default={})
+    second = _segundo_dia(filas, top)
+    for idx, fila in enumerate(filas):
+        yy = y + h - row_h * (idx + 2)
+        c.setFillColor(colors.white)
+        c.rect(x, yy, w, row_h, fill=1, stroke=0)
+        c.setStrokeColor(colors.HexColor("#E5E7EB"))
+        c.line(x, yy, x + w, yy)
+        estado = "Sin reservas"
+        estado_color = colors.black
+        if fila.get("fecha") == top.get("fecha") and int(fila.get("personas") or 0) > 0:
+            estado = "Mejor dia"
+            estado_color = green
+        elif fila.get("fecha") == second.get("fecha") and int(fila.get("personas") or 0) > 0:
+            estado = "Buen movimiento"
+            estado_color = blue
+        values = [_dia_label(fila["fecha"]), str(fila["personas"]), str(fila["reservas"]), estado]
+        xx = x
+        for col, value in enumerate(values):
+            c.setFillColor(estado_color if col == 3 else colors.black)
+            c.setFont("Helvetica-Bold" if col in (0, 3) else "Helvetica", 6.8)
+            c.drawCentredString(xx + col_w[col] / 2, yy + 7.5, value)
+            xx += col_w[col]
+
+
+def _draw_circle_icon(c, cx: float, cy: float, radius: float, fill, icon: str, icon_color=None) -> None:
+    c.setFillColor(fill)
+    c.circle(cx, cy, radius, fill=1, stroke=0)
+    _draw_icon(c, cx, cy, icon, icon_color or _money_color("#FFFFFF"), radius * 0.75)
+
+
+def _draw_icon(c, cx: float, cy: float, icon: str, color, size: float) -> None:
+    from reportlab.lib import colors
+
+    c.setStrokeColor(color)
+    c.setFillColor(color)
+    c.setLineWidth(max(1.2, size / 9))
+    s = size
+    if icon == "trend":
+        c.line(cx - s * 0.6, cy - s * 0.45, cx - s * 0.2, cy - s * 0.1)
+        c.line(cx - s * 0.2, cy - s * 0.1, cx + s * 0.08, cy - s * 0.25)
+        c.line(cx + s * 0.08, cy - s * 0.25, cx + s * 0.55, cy + s * 0.42)
+        c.line(cx + s * 0.33, cy + s * 0.42, cx + s * 0.55, cy + s * 0.42)
+        c.line(cx + s * 0.55, cy + s * 0.42, cx + s * 0.55, cy + s * 0.2)
+        for i, h in enumerate([0.35, 0.55, 0.8]):
+            bx = cx - s * 0.58 + i * s * 0.35
+            c.rect(bx, cy - s * 0.65, s * 0.16, s * h, fill=1, stroke=0)
+    elif icon == "calendar":
+        c.roundRect(cx - s * 0.55, cy - s * 0.5, s * 1.1, s * 0.95, 2, fill=0, stroke=1)
+        c.line(cx - s * 0.55, cy + s * 0.18, cx + s * 0.55, cy + s * 0.18)
+        c.line(cx - s * 0.2, cy - s * 0.1, cx - s * 0.02, cy - s * 0.28)
+        c.line(cx - s * 0.02, cy - s * 0.28, cx + s * 0.3, cy + s * 0.1)
+    elif icon == "people":
+        for dx, r in [(-0.35, 0.22), (0.0, 0.28), (0.35, 0.22)]:
+            c.circle(cx + s * dx, cy + s * 0.2, s * r, fill=1, stroke=0)
+        c.roundRect(cx - s * 0.65, cy - s * 0.45, s * 1.3, s * 0.45, 5, fill=1, stroke=0)
+    elif icon == "user":
+        c.circle(cx, cy + s * 0.22, s * 0.28, fill=1, stroke=0)
+        c.roundRect(cx - s * 0.45, cy - s * 0.5, s * 0.9, s * 0.48, 5, fill=1, stroke=0)
+    elif icon == "chat":
+        c.roundRect(cx - s * 0.55, cy - s * 0.25, s * 0.85, s * 0.55, 5, fill=0, stroke=1)
+        c.roundRect(cx - s * 0.1, cy - s * 0.05, s * 0.65, s * 0.45, 5, fill=0, stroke=1)
+        for dx in [-0.24, 0.0, 0.24]:
+            c.circle(cx + s * dx, cy + s * 0.02, s * 0.04, fill=1, stroke=0)
+    elif icon == "x":
+        c.setFillColor(colors.white)
+        c.circle(cx, cy, s * 0.58, fill=0, stroke=1)
+        c.line(cx - s * 0.28, cy - s * 0.28, cx + s * 0.28, cy + s * 0.28)
+        c.line(cx - s * 0.28, cy + s * 0.28, cx + s * 0.28, cy - s * 0.28)
+    elif icon == "headset":
+        c.arc(cx - s * 0.55, cy - s * 0.35, cx + s * 0.55, cy + s * 0.65, 0, 180)
+        c.rect(cx - s * 0.62, cy - s * 0.15, s * 0.18, s * 0.38, fill=1, stroke=0)
+        c.rect(cx + s * 0.44, cy - s * 0.15, s * 0.18, s * 0.38, fill=1, stroke=0)
+        c.line(cx + s * 0.32, cy - s * 0.37, cx + s * 0.05, cy - s * 0.37)
+    elif icon == "trophy":
+        c.rect(cx - s * 0.3, cy - s * 0.1, s * 0.6, s * 0.45, fill=1, stroke=0)
+        c.line(cx - s * 0.2, cy - s * 0.1, cx - s * 0.05, cy - s * 0.45)
+        c.line(cx + s * 0.2, cy - s * 0.1, cx + s * 0.05, cy - s * 0.45)
+        c.rect(cx - s * 0.28, cy - s * 0.55, s * 0.56, s * 0.1, fill=1, stroke=0)
+        c.arc(cx - s * 0.6, cy - s * 0.05, cx - s * 0.2, cy + s * 0.35, 250, 110)
+        c.arc(cx + s * 0.2, cy - s * 0.05, cx + s * 0.6, cy + s * 0.35, -10, 110)
+    elif icon == "calendar-off":
+        c.roundRect(cx - s * 0.5, cy - s * 0.45, s, s * 0.9, 2, fill=0, stroke=1)
+        c.line(cx - s * 0.5, cy + s * 0.18, cx + s * 0.5, cy + s * 0.18)
+        c.line(cx - s * 0.25, cy - s * 0.22, cx + s * 0.25, cy + s * 0.22)
+        c.line(cx - s * 0.25, cy + s * 0.22, cx + s * 0.25, cy - s * 0.22)
+    elif icon == "clock":
+        c.circle(cx, cy, s * 0.55, fill=0, stroke=1)
+        c.line(cx, cy, cx, cy + s * 0.32)
+        c.line(cx, cy, cx + s * 0.25, cy - s * 0.18)
+    elif icon == "bulb":
+        c.circle(cx, cy + s * 0.12, s * 0.36, fill=0, stroke=1)
+        c.line(cx - s * 0.2, cy - s * 0.2, cx + s * 0.2, cy - s * 0.2)
+        c.rect(cx - s * 0.16, cy - s * 0.45, s * 0.32, s * 0.17, fill=0, stroke=1)
 
 
 def _aplicar_membrete(content_path: Path, output_path: Path) -> None:
