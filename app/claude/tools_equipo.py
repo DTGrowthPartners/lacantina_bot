@@ -26,6 +26,51 @@ from app.integrations import cantina_api
 from app.logging_setup import log
 
 _PLANO = Path(get_settings().data_dir) / "media" / "plano-espacio.png"
+_HORA_APERTURA_LUN_JUE = "18:00"
+_HORA_APERTURA_VIE_DOM = "17:00"
+
+
+def _schema_evento_desde_estado() -> dict:
+    return {
+        "evento_fecha": {
+            "type": "string",
+            "description": (
+                "YYYY-MM-DD del evento/promocion que aparece en el flyer. "
+                "No es la fecha de publicacion del estado."
+            ),
+        },
+        "evento_nombre": {
+            "type": "string",
+            "description": "Nombre/titulo del evento extraido del flyer.",
+        },
+        "evento_artista": {
+            "type": "string",
+            "description": "Artista, partido o protagonista del evento si aparece.",
+        },
+        "evento_hora_inicio": {
+            "type": "string",
+            "description": (
+                "Hora de inicio del evento en HH:MM 24h. Si el flyer no muestra hora, "
+                "omite este campo y el bot usara la hora normal de apertura."
+            ),
+        },
+        "evento_tiene_cover": {
+            "type": "boolean",
+            "description": "true si el flyer indica cover o precio de entrada.",
+        },
+        "evento_valor_cover": {
+            "type": "integer",
+            "description": "Valor del cover en COP si aparece.",
+        },
+        "evento_link_pago": {
+            "type": "string",
+            "description": "Link de pago si el equipo lo escribio junto al flyer.",
+        },
+        "evento_descripcion": {
+            "type": "string",
+            "description": "Descripcion corta extraida del flyer para recordar detalles.",
+        },
+    }
 
 
 TOOL_DEFINITIONS_EQUIPO: list[dict] = [
@@ -340,12 +385,16 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "los clientes que lo pidan. Úsalo cuando el equipo mande una imagen o un "
             "video diciendo 'publica esto como estado', 'sube este estado', 'pon esta "
             "promo', etc. Requiere que el equipo haya adjuntado una imagen o video en "
-            "el mensaje. Si incluyen un texto para acompañar la promo, pásalo en `caption`."
+            "el mensaje. Si incluyen un texto para acompañar la promo, pásalo en `caption`. "
+            "Si la imagen es un flyer de evento, extrae fecha/nombre/hora/cover del flyer "
+            "y pasa los campos `evento_*`: la tool creará o actualizará el evento y guardará "
+            "el flyer sin duplicar si ya existe esa fecha/hora."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "caption": {"type": "string", "description": "Texto opcional para acompañar el estado/promo"},
+                **_schema_evento_desde_estado(),
             },
         },
     },
@@ -356,7 +405,9 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "en una fecha y hora futuras de Colombia. Usala cuando el equipo diga "
             "'programa este estado', 'subelo mañana a las 7 PM' o similar. La fecha "
             "debe ser YYYY-MM-DD y la hora debe conservar formato de 12 horas con AM/PM. "
-            "Requiere imagen o video adjunto en el mismo mensaje."
+            "Requiere imagen o video adjunto en el mismo mensaje. Si la imagen es un flyer "
+            "de evento, extrae fecha/nombre/hora/cover del flyer y pasa los campos `evento_*`; "
+            "la tool creará o actualizará el evento de inmediato y guardará el flyer."
         ),
         "input_schema": {
             "type": "object",
@@ -373,6 +424,7 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
                     "type": "string",
                     "description": "Texto opcional que acompañara el estado.",
                 },
+                **_schema_evento_desde_estado(),
             },
             "required": ["fecha", "hora"],
         },
@@ -622,6 +674,110 @@ async def handler_eventos_del_mes(args: dict, ctx: dict) -> dict:
     }
 
 
+def _hora_apertura_normal(fecha: str | None) -> str | None:
+    try:
+        dia = datetime.strptime(str(fecha or ""), "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    if dia.weekday() <= 3:
+        return _HORA_APERTURA_LUN_JUE
+    return _HORA_APERTURA_VIE_DOM
+
+
+def _normalizar_hora_inicio_evento(fecha: str | None, raw: str | None) -> str | None:
+    hora = str(raw or "").strip()
+    if hora:
+        try:
+            return datetime.strptime(hora, "%H:%M").strftime("%H:%M")
+        except ValueError:
+            pass
+    return _hora_apertura_normal(fecha)
+
+
+def _int_cover(valor: object) -> int:
+    if valor is None or valor == "":
+        return 0
+    try:
+        return max(0, int(str(valor).replace(".", "").replace(",", "").strip()))
+    except ValueError:
+        return 0
+
+
+def _bool_cover(raw: object, valor_cover: int) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    texto = str(raw or "").strip().lower()
+    if texto in {"true", "si", "sí", "1", "cover", "con cover"}:
+        return True
+    if texto in {"false", "no", "0", "sin cover"}:
+        return False
+    return valor_cover > 0
+
+
+async def _sincronizar_evento_desde_estado(args: dict, ctx: dict, *, media_bytes: bytes | None, media_mime: str | None) -> dict | None:
+    """Crea/actualiza el evento asociado a un flyer publicado como estado.
+
+    Es idempotente por (fecha, hora_inicio): reenviar el mismo flyer vuelve a
+    tocar esa franja, no crea un evento adicional.
+    """
+    if not media_bytes:
+        return None
+    fecha = str(args.get("evento_fecha") or "").strip()
+    nombre = str(args.get("evento_nombre") or "").strip()
+    if not (fecha and nombre):
+        return None
+    hora_inicio = _normalizar_hora_inicio_evento(fecha, args.get("evento_hora_inicio"))
+    if not hora_inicio:
+        return {
+            "ok": False,
+            "error": "No pude interpretar la fecha del evento para asignar hora normal.",
+        }
+
+    descripcion = (args.get("evento_descripcion") or "").strip() or None
+    valor_cover = _int_cover(args.get("evento_valor_cover"))
+    payload = {
+        "fecha": fecha,
+        "nombre": nombre,
+        "hora_inicio": hora_inicio,
+        "tiene_cover": _bool_cover(args.get("evento_tiene_cover"), valor_cover),
+        "valor_cover": valor_cover,
+    }
+    if args.get("evento_artista"):
+        payload["artista"] = str(args.get("evento_artista")).strip()
+    if args.get("evento_link_pago"):
+        payload["link_pago"] = str(args.get("evento_link_pago")).strip()
+
+    existentes: list[dict] = []
+    consulta = await cantina_api.consultar_evento(fecha)
+    if isinstance(consulta, dict) and consulta.get("ok"):
+        existentes = extraer_eventos(consulta)
+    ya_existia = any(str(e.get("hora_inicio") or "") == hora_inicio for e in existentes)
+
+    res = await cantina_api.crear_evento(payload)
+    if isinstance(res, dict) and res.get("ok"):
+        path_flyer = guardar_flyer(fecha, hora_inicio, media_bytes, media_mime)
+        guardar_descripcion(fecha, hora_inicio, descripcion)
+        res["evento_desde_estado"] = {
+            "ok": True,
+            "fecha": fecha,
+            "hora_inicio": hora_inicio,
+            "nombre": nombre,
+            "creado": not ya_existia,
+            "actualizado": ya_existia,
+            "flyer_guardado": bool(path_flyer),
+            "hora_asumida": not bool(str(args.get("evento_hora_inicio") or "").strip()),
+        }
+        log.info(
+            "tools_equipo.estado.evento_sync",
+            fecha=fecha,
+            hora=hora_inicio,
+            creado=not ya_existia,
+            flyer=bool(path_flyer),
+            por=ctx.get("miembro_nombre"),
+        )
+    return res
+
+
 async def handler_crear_evento(args: dict, ctx: dict) -> dict:
     fecha = args.get("fecha")
     hora_inicio = args.get("hora_inicio")
@@ -811,10 +967,39 @@ async def handler_publicar_estado(args: dict, ctx: dict) -> dict:
         log.warning("tools_equipo.publicar_estado.guardar_fail", error=str(e))
         return {"ok": True, "nota": "Estado publicado, pero no pude guardarlo para "
                                     "reenviar a clientes. Avísale al admin."}
+    evento_sync = None
+    if not video_bytes:
+        evento_sync = await _sincronizar_evento_desde_estado(
+            args,
+            ctx,
+            media_bytes=data,
+            media_mime=mime,
+        )
     tipo = "video" if video_bytes else "imagen"
     log.info("tools_equipo.publicar_estado", por=ctx.get("miembro_nombre"), tipo=tipo)
-    return {"ok": True, "nota": f"Estado ({tipo}) publicado en WhatsApp y guardado. Ahora el "
-                                "bot puede reenviárselo a los clientes que pregunten por la promo/estado."}
+    nota = (
+        f"Estado ({tipo}) publicado en WhatsApp y guardado. Ahora el bot puede "
+        "reenviárselo a los clientes que pregunten por la promo/estado."
+    )
+    if isinstance(evento_sync, dict):
+        ev = evento_sync.get("evento_desde_estado") if evento_sync.get("ok") else None
+        if ev:
+            accion = "creé" if ev.get("creado") else "actualicé"
+            extra = " (hora normal asumida)" if ev.get("hora_asumida") else ""
+            nota += (
+                f" Además, {accion} el evento del {ev['fecha']} a las "
+                f"{ev['hora_inicio']}{extra} y guardé el flyer."
+            )
+        elif not evento_sync.get("ok"):
+            nota += f" No pude crear el evento automático: {evento_sync.get('error') or 'error del backend'}."
+    elif not video_bytes and (args.get("evento_fecha") or args.get("evento_nombre")):
+        nota += " No creé evento automático porque faltó fecha o nombre del evento."
+    return {
+        "ok": True,
+        "tipo": tipo,
+        "evento_sync": evento_sync,
+        "nota": nota,
+    }
 
 
 async def handler_programar_estado(args: dict, ctx: dict) -> dict:
@@ -857,6 +1042,14 @@ async def handler_programar_estado(args: dict, ctx: dict) -> dict:
         programado_para=programado,
         creado_por=ctx.get("miembro_nombre"),
     )
+    evento_sync = None
+    if tipo == "imagen":
+        evento_sync = await _sincronizar_evento_desde_estado(
+            args,
+            ctx,
+            media_bytes=data,
+            media_mime=mime,
+        )
     log.info(
         "tools_equipo.programar_estado",
         estado_id=estado_id,
@@ -868,7 +1061,12 @@ async def handler_programar_estado(args: dict, ctx: dict) -> dict:
         "estado_id": estado_id,
         "tipo": tipo,
         "programado_para": estados_programados.formatear_hora_colombia(programado),
-        "nota": "Confirma brevemente el ID, la fecha y la hora Colombia.",
+        "evento_sync": evento_sync,
+        "nota": (
+            "Confirma brevemente el ID, la fecha y la hora Colombia. "
+            "Si evento_sync trae evento_desde_estado, menciona tambien si el evento "
+            "quedo creado o actualizado."
+        ),
     }
 
 
