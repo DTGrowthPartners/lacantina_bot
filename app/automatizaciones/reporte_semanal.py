@@ -356,7 +356,7 @@ def _draw_executive_report(c, data: dict[str, Any]) -> None:
     right = 584
     c.setFillColor(navy)
     c.setFont("Helvetica-Bold", 27)
-    c.drawString(left, 662, "Reporte semanal - agente Nicky")
+    c.drawString(left, 662, "Reporte semanal - Agente Nicky")
     c.setFont("Helvetica-Bold", 18)
     c.setFillColor(blue)
     c.drawString(left, 639, "La Cantina Plus")
@@ -371,7 +371,7 @@ def _draw_executive_report(c, data: dict[str, Any]) -> None:
         left + 82,
         584,
         [
-            ("Esta semana el agente Nicky ayudo a generar ", "Helvetica", 12.4, navy),
+            ("Esta semana la Agente Nicky ayudo a generar ", "Helvetica", 12.4, navy),
             (str(totals["reservas"]), "Helvetica-Bold", 15, blue),
             (f" reservas para {totals['personas']} personas.", "Helvetica", 12.4, navy),
         ],
@@ -687,58 +687,74 @@ def _draw_circle_icon(c, cx: float, cy: float, radius: float, fill, icon: str, i
 
 
 def _draw_icon(c, cx: float, cy: float, icon: str, color, size: float) -> None:
-    from reportlab.lib import colors
-
+    c.saveState()
     c.setStrokeColor(color)
     c.setFillColor(color)
-    c.setLineWidth(max(1.2, size / 9))
+    c.setLineWidth(max(1.4, size / 11))
+    if hasattr(c, "setLineCap"):
+        c.setLineCap(1)
+    if hasattr(c, "setLineJoin"):
+        c.setLineJoin(1)
     s = size
     if icon == "trend":
-        c.line(cx - s * 0.6, cy - s * 0.45, cx - s * 0.2, cy - s * 0.1)
-        c.line(cx - s * 0.2, cy - s * 0.1, cx + s * 0.08, cy - s * 0.25)
-        c.line(cx + s * 0.08, cy - s * 0.25, cx + s * 0.55, cy + s * 0.42)
-        c.line(cx + s * 0.33, cy + s * 0.42, cx + s * 0.55, cy + s * 0.42)
-        c.line(cx + s * 0.55, cy + s * 0.42, cx + s * 0.55, cy + s * 0.2)
-        for i, h in enumerate([0.35, 0.55, 0.8]):
-            bx = cx - s * 0.58 + i * s * 0.35
-            c.rect(bx, cy - s * 0.65, s * 0.16, s * h, fill=1, stroke=0)
+        for i, h in enumerate([0.35, 0.55, 0.78]):
+            bx = cx - s * 0.52 + i * s * 0.34
+            c.roundRect(bx, cy - s * 0.58, s * 0.14, s * h, 1.2, fill=0, stroke=1)
+        c.line(cx - s * 0.5, cy - s * 0.18, cx - s * 0.18, cy + s * 0.08)
+        c.line(cx - s * 0.18, cy + s * 0.08, cx + s * 0.08, cy - s * 0.06)
+        c.line(cx + s * 0.08, cy - s * 0.06, cx + s * 0.52, cy + s * 0.48)
+        c.line(cx + s * 0.32, cy + s * 0.48, cx + s * 0.52, cy + s * 0.48)
+        c.line(cx + s * 0.52, cy + s * 0.48, cx + s * 0.52, cy + s * 0.28)
     elif icon == "calendar":
-        c.roundRect(cx - s * 0.55, cy - s * 0.5, s * 1.1, s * 0.95, 2, fill=0, stroke=1)
-        c.line(cx - s * 0.55, cy + s * 0.18, cx + s * 0.55, cy + s * 0.18)
+        c.roundRect(cx - s * 0.55, cy - s * 0.48, s * 1.1, s * 0.92, 3, fill=0, stroke=1)
+        c.line(cx - s * 0.55, cy + s * 0.16, cx + s * 0.55, cy + s * 0.16)
+        c.line(cx - s * 0.28, cy + s * 0.55, cx - s * 0.28, cy + s * 0.32)
+        c.line(cx + s * 0.28, cy + s * 0.55, cx + s * 0.28, cy + s * 0.32)
         c.line(cx - s * 0.2, cy - s * 0.1, cx - s * 0.02, cy - s * 0.28)
         c.line(cx - s * 0.02, cy - s * 0.28, cx + s * 0.3, cy + s * 0.1)
     elif icon == "people":
-        for dx, r in [(-0.35, 0.22), (0.0, 0.28), (0.35, 0.22)]:
-            c.circle(cx + s * dx, cy + s * 0.2, s * r, fill=1, stroke=0)
-        c.roundRect(cx - s * 0.65, cy - s * 0.45, s * 1.3, s * 0.45, 5, fill=1, stroke=0)
+        c.circle(cx, cy + s * 0.25, s * 0.18, fill=0, stroke=1)
+        c.circle(cx - s * 0.42, cy + s * 0.12, s * 0.14, fill=0, stroke=1)
+        c.circle(cx + s * 0.42, cy + s * 0.12, s * 0.14, fill=0, stroke=1)
+        c.arc(cx - s * 0.36, cy - s * 0.48, cx + s * 0.36, cy + s * 0.05, 20, 140)
+        c.arc(cx - s * 0.72, cy - s * 0.48, cx - s * 0.12, cy - s * 0.02, 24, 132)
+        c.arc(cx + s * 0.12, cy - s * 0.48, cx + s * 0.72, cy - s * 0.02, 24, 132)
     elif icon == "user":
-        c.circle(cx, cy + s * 0.22, s * 0.28, fill=1, stroke=0)
-        c.roundRect(cx - s * 0.45, cy - s * 0.5, s * 0.9, s * 0.48, 5, fill=1, stroke=0)
+        c.circle(cx, cy + s * 0.2, s * 0.24, fill=0, stroke=1)
+        c.arc(cx - s * 0.45, cy - s * 0.58, cx + s * 0.45, cy + s * 0.16, 20, 140)
     elif icon == "chat":
-        c.roundRect(cx - s * 0.55, cy - s * 0.25, s * 0.85, s * 0.55, 5, fill=0, stroke=1)
-        c.roundRect(cx - s * 0.1, cy - s * 0.05, s * 0.65, s * 0.45, 5, fill=0, stroke=1)
-        for dx in [-0.24, 0.0, 0.24]:
-            c.circle(cx + s * dx, cy + s * 0.02, s * 0.04, fill=1, stroke=0)
+        c.roundRect(cx - s * 0.58, cy - s * 0.22, s * 0.78, s * 0.48, 5, fill=0, stroke=1)
+        c.line(cx - s * 0.2, cy - s * 0.22, cx - s * 0.36, cy - s * 0.42)
+        c.roundRect(cx - s * 0.06, cy - s * 0.02, s * 0.64, s * 0.42, 5, fill=0, stroke=1)
+        c.line(cx + s * 0.26, cy - s * 0.02, cx + s * 0.42, cy - s * 0.22)
+        for dx in (-0.3, 0.0, 0.3):
+            c.circle(cx + s * dx, cy + s * 0.04, s * 0.035, fill=1, stroke=0)
     elif icon == "x":
-        c.setFillColor(colors.white)
         c.circle(cx, cy, s * 0.58, fill=0, stroke=1)
         c.line(cx - s * 0.28, cy - s * 0.28, cx + s * 0.28, cy + s * 0.28)
         c.line(cx - s * 0.28, cy + s * 0.28, cx + s * 0.28, cy - s * 0.28)
     elif icon == "headset":
         c.arc(cx - s * 0.55, cy - s * 0.35, cx + s * 0.55, cy + s * 0.65, 0, 180)
-        c.rect(cx - s * 0.62, cy - s * 0.15, s * 0.18, s * 0.38, fill=1, stroke=0)
-        c.rect(cx + s * 0.44, cy - s * 0.15, s * 0.18, s * 0.38, fill=1, stroke=0)
-        c.line(cx + s * 0.32, cy - s * 0.37, cx + s * 0.05, cy - s * 0.37)
+        c.roundRect(cx - s * 0.65, cy - s * 0.17, s * 0.18, s * 0.36, 2, fill=0, stroke=1)
+        c.roundRect(cx + s * 0.47, cy - s * 0.17, s * 0.18, s * 0.36, 2, fill=0, stroke=1)
+        c.line(cx + s * 0.35, cy - s * 0.37, cx + s * 0.06, cy - s * 0.37)
+        c.circle(cx, cy - s * 0.37, s * 0.035, fill=1, stroke=0)
     elif icon == "trophy":
-        c.rect(cx - s * 0.3, cy - s * 0.1, s * 0.6, s * 0.45, fill=1, stroke=0)
-        c.line(cx - s * 0.2, cy - s * 0.1, cx - s * 0.05, cy - s * 0.45)
-        c.line(cx + s * 0.2, cy - s * 0.1, cx + s * 0.05, cy - s * 0.45)
-        c.rect(cx - s * 0.28, cy - s * 0.55, s * 0.56, s * 0.1, fill=1, stroke=0)
-        c.arc(cx - s * 0.6, cy - s * 0.05, cx - s * 0.2, cy + s * 0.35, 250, 110)
-        c.arc(cx + s * 0.2, cy - s * 0.05, cx + s * 0.6, cy + s * 0.35, -10, 110)
+        c.line(cx - s * 0.3, cy + s * 0.34, cx + s * 0.3, cy + s * 0.34)
+        c.line(cx - s * 0.3, cy + s * 0.34, cx - s * 0.22, cy - s * 0.08)
+        c.line(cx + s * 0.3, cy + s * 0.34, cx + s * 0.22, cy - s * 0.08)
+        c.line(cx - s * 0.22, cy - s * 0.08, cx + s * 0.22, cy - s * 0.08)
+        c.line(cx - s * 0.1, cy - s * 0.1, cx - s * 0.04, cy - s * 0.45)
+        c.line(cx + s * 0.1, cy - s * 0.1, cx + s * 0.04, cy - s * 0.45)
+        c.line(cx - s * 0.3, cy - s * 0.45, cx + s * 0.3, cy - s * 0.45)
+        c.line(cx - s * 0.2, cy - s * 0.55, cx + s * 0.2, cy - s * 0.55)
+        c.arc(cx - s * 0.62, cy - s * 0.04, cx - s * 0.18, cy + s * 0.34, 245, 118)
+        c.arc(cx + s * 0.18, cy - s * 0.04, cx + s * 0.62, cy + s * 0.34, -3, 118)
     elif icon == "calendar-off":
         c.roundRect(cx - s * 0.5, cy - s * 0.45, s, s * 0.9, 2, fill=0, stroke=1)
         c.line(cx - s * 0.5, cy + s * 0.18, cx + s * 0.5, cy + s * 0.18)
+        c.line(cx - s * 0.24, cy + s * 0.54, cx - s * 0.24, cy + s * 0.32)
+        c.line(cx + s * 0.24, cy + s * 0.54, cx + s * 0.24, cy + s * 0.32)
         c.line(cx - s * 0.25, cy - s * 0.22, cx + s * 0.25, cy + s * 0.22)
         c.line(cx - s * 0.25, cy + s * 0.22, cx + s * 0.25, cy - s * 0.22)
     elif icon == "clock":
@@ -748,7 +764,8 @@ def _draw_icon(c, cx: float, cy: float, icon: str, color, size: float) -> None:
     elif icon == "bulb":
         c.circle(cx, cy + s * 0.12, s * 0.36, fill=0, stroke=1)
         c.line(cx - s * 0.2, cy - s * 0.2, cx + s * 0.2, cy - s * 0.2)
-        c.rect(cx - s * 0.16, cy - s * 0.45, s * 0.32, s * 0.17, fill=0, stroke=1)
+        c.roundRect(cx - s * 0.16, cy - s * 0.45, s * 0.32, s * 0.17, 1.5, fill=0, stroke=1)
+    c.restoreState()
 
 
 def _aplicar_membrete(content_path: Path, output_path: Path) -> None:
@@ -881,7 +898,7 @@ async def accion_reporte_semanal_pdf(session: AsyncSession, params: dict) -> dic
         return {"ok": False, "error": "falta destino_id para enviar la imagen"}
 
     caption = (
-        f"Reporte semanal La Cantina Plus - agente Nicky\n"
+        f"Reporte semanal La Cantina Plus - Agente Nicky\n"
         f"{_periodo_largo(data['inicio'], data['fin'])}\n"
         f"Reservas: {data['totales']['reservas']} - Personas: {data['totales']['personas']}"
     )
