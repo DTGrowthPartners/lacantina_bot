@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hmac
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -32,6 +33,7 @@ from app.webhooks_salientes import emitir_evento
 from app.whapi import client as whapi
 
 router = APIRouter(prefix="/api/v1", tags=["api-externa"])
+TZ_COLOMBIA = ZoneInfo("America/Bogota")
 
 
 # ── Auth ────────────────────────────────────────────────────────────────────
@@ -143,7 +145,9 @@ async def stats(_: None = Depends(auth), session: AsyncSession = Depends(get_ses
     """Métricas operativas: reservas del día, mensajes, chats activos, pendientes."""
     s = get_settings()
     ahora = datetime.now(timezone.utc)
-    hoy = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+    hoy_local = ahora.astimezone(TZ_COLOMBIA).replace(hour=0, minute=0, second=0, microsecond=0)
+    hoy = hoy_local.astimezone(timezone.utc)
+    fecha_hoy = hoy_local.date().isoformat()
     hace_7d = ahora - timedelta(days=7)
 
     inbound = (await session.execute(
@@ -169,12 +173,23 @@ async def stats(_: None = Depends(auth), session: AsyncSession = Depends(get_ses
     # Reservas del día (backend de mesas, best-effort)
     reservas: dict = {"ok": False, "error": "backend de mesas no disponible"}
     try:
-        resumen = await cantina_api.resumen_dia(hoy.date().isoformat())
+        resumen = await cantina_api.resumen_dia(fecha_hoy)
         if isinstance(resumen, dict) and resumen.get("ok"):
             p = resumen.get("data") if isinstance(resumen.get("data"), dict) else resumen
             eventos = extraer_eventos(p)
+            reservas_list = [r for r in (p.get("reservas") or []) if isinstance(r, dict)]
+            salas_reservadas = [
+                s for s in (p.get("salas") or [])
+                if isinstance(s, dict) and isinstance(s.get("reserva"), dict)
+            ]
             reservas = {
                 "ok": True,
+                "fecha": fecha_hoy,
+                "total_reservas": (
+                    p.get("total_reservas")
+                    if p.get("total_reservas") is not None
+                    else len(reservas_list) + len(salas_reservadas)
+                ),
                 "mesas_ocupadas": p.get("mesas_ocupadas"),
                 "mesas_totales": p.get("mesas_totales"),
                 "total_personas": p.get("total_personas"),

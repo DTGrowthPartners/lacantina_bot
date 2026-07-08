@@ -9,6 +9,7 @@ lo indica sin romper el dashboard.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -22,11 +23,64 @@ from app.eventos import extraer_eventos, resumen_eventos
 from app.integrations import cantina_api
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+TZ_COLOMBIA = ZoneInfo("America/Bogota")
 
 
 def _check_auth(request: Request) -> bool:
     """Misma sesión que SQLAdmin."""
     return "admin_token" in request.session
+
+
+def _inicio_dia_colombia_utc(ahora_utc: datetime | None = None) -> tuple[datetime, str]:
+    """Devuelve inicio del dia Colombia en UTC y fecha YYYY-MM-DD Colombia."""
+    ahora = ahora_utc or datetime.now(timezone.utc)
+    if ahora.tzinfo is None:
+        ahora = ahora.replace(tzinfo=timezone.utc)
+    local = ahora.astimezone(TZ_COLOMBIA)
+    inicio_local = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return inicio_local.astimezone(timezone.utc), inicio_local.date().isoformat()
+
+
+def _reservas_payload_desde_resumen(p: dict) -> tuple[dict, list[dict]]:
+    reservas_list = [
+        {
+            "id": r.get("id"),
+            "nombre": r.get("nombre_cliente") or "—",
+            "mesa": r.get("mesa_numero"),
+            "mesa_label": f"Mesa {r.get('mesa_numero')}" if r.get("mesa_numero") is not None else "—",
+            "zona": r.get("mesa_zona"),
+            "personas": r.get("num_personas"),
+            "cover": r.get("cover_estado"),
+            "notas": (r.get("notas") or "")[:60],
+        }
+        for r in (p.get("reservas") or [])
+        if isinstance(r, dict)
+    ]
+    for sala in (p.get("salas") or []):
+        if not isinstance(sala, dict) or not isinstance(sala.get("reserva"), dict):
+            continue
+        reserva = sala["reserva"]
+        reservas_list.append({
+            "id": reserva.get("id"),
+            "nombre": reserva.get("nombre_cliente") or "—",
+            "mesa": None,
+            "mesa_label": sala.get("nombre") or "Sala privada",
+            "zona": "Sala privada",
+            "personas": reserva.get("num_personas"),
+            "cover": reserva.get("cover_estado") or "no_aplica",
+            "notas": (reserva.get("notas") or "")[:60],
+        })
+
+    eventos = extraer_eventos(p)
+    resumen = {
+        "total_reservas": p.get("total_reservas") if p.get("total_reservas") is not None else len(reservas_list),
+        "mesas_ocupadas": p.get("mesas_ocupadas"),
+        "mesas_totales": p.get("mesas_totales"),
+        "total_personas": p.get("total_personas"),
+        "covers_pendientes": p.get("covers_pendientes"),
+        "evento": resumen_eventos(eventos),
+    }
+    return resumen, reservas_list
 
 
 @router.get("/dashboard.json")
@@ -38,7 +92,7 @@ async def dashboard_json(
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 
     ahora = datetime.now(timezone.utc)
-    hoy = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+    hoy, fecha_hoy = _inicio_dia_colombia_utc(ahora)
     hace_7d = ahora - timedelta(days=7)
     hace_30d = ahora - timedelta(days=30)
 
@@ -105,33 +159,14 @@ async def dashboard_json(
     ]
 
     # ── Reservas de hoy (backend de mesas, best-effort) ─────────────────────
-    fecha_hoy = hoy.date().isoformat()
     resumen = await cantina_api.resumen_dia(fecha_hoy)
     if isinstance(resumen, dict) and resumen.get("ok"):
         p = resumen.get("data") if isinstance(resumen.get("data"), dict) else resumen
-        eventos = extraer_eventos(p)
-        reservas_list = [
-            {
-                "id": r.get("id"),
-                "nombre": r.get("nombre_cliente") or "—",
-                "mesa": r.get("mesa_numero"),
-                "zona": r.get("mesa_zona"),
-                "personas": r.get("num_personas"),
-                "cover": r.get("cover_estado"),
-                "notas": (r.get("notas") or "")[:60],
-            }
-            for r in (p.get("reservas") or [])
-            if isinstance(r, dict)
-        ]
+        resumen_payload, reservas_list = _reservas_payload_desde_resumen(p)
         reservas_backend = {
             "ok": True,
-            "resumen": {
-                "mesas_ocupadas": p.get("mesas_ocupadas"),
-                "mesas_totales": p.get("mesas_totales"),
-                "total_personas": p.get("total_personas"),
-                "covers_pendientes": p.get("covers_pendientes"),
-                "evento": resumen_eventos(eventos),
-            },
+            "fecha": fecha_hoy,
+            "resumen": resumen_payload,
             "reservas": reservas_list,
         }
     else:
@@ -157,6 +192,7 @@ async def dashboard_json(
 
     return {
         "hora_consulta": ahora.isoformat(),
+        "fecha_operativa": fecha_hoy,
         "conversaciones": {
             "total_hoy": int(conv_hoy),
             "inbound_hoy": int(inbound_hoy),
@@ -460,8 +496,8 @@ fetch('/admin/dashboard.json').then(r => r.json()).then(d => {
 
   const k = document.getElementById('kpis');
   const resB = (d.reservas_backend && d.reservas_backend.ok && d.reservas_backend.resumen) ? d.reservas_backend.resumen : null;
-  const reservasCard = resB && resB.mesas_ocupadas != null
-    ? { chip: 'green', icon: '#i-cal', t: 'Reservas hoy', v: resB.mesas_ocupadas + ' / ' + (resB.mesas_totales != null ? resB.mesas_totales : '?'), sub: 'mesas ocupadas' }
+  const reservasCard = resB && resB.total_reservas != null
+    ? { chip: 'green', icon: '#i-cal', t: 'Reservas hoy', v: fmt(resB.total_reservas), sub: ((resB.mesas_ocupadas ?? 0) + '/' + (resB.mesas_totales ?? '?') + ' mesas · ' + (resB.total_personas ?? 0) + ' pers.') }
     : { chip: 'green', icon: '#i-cal', t: 'Reservas hoy', v: '—', sub: 'backend no disponible' };
   const cards = [
     reservasCard,
@@ -487,6 +523,7 @@ fetch('/admin/dashboard.json').then(r => r.json()).then(d => {
   if (rbk.ok) {
     const s = rbk.resumen || {};
     const partes = [];
+    if (s.total_reservas != null) partes.push(fmt(s.total_reservas) + ' reservas');
     if (s.mesas_ocupadas != null) partes.push(s.mesas_ocupadas + '/' + (s.mesas_totales ?? '?') + ' mesas');
     if (s.total_personas != null) partes.push(s.total_personas + ' pers.');
     if (s.covers_pendientes) partes.push(s.covers_pendientes + ' cover pend.');
@@ -497,7 +534,7 @@ fetch('/admin/dashboard.json').then(r => r.json()).then(d => {
       rb.innerHTML = rs.map(r => `
         <tr>
           <td><span class="cell-main">${esc(r.nombre)}</span>${r.notas ? '<div class="cell-sub">'+esc(r.notas)+'</div>' : ''}</td>
-          <td>${r.mesa != null ? 'Mesa ' + esc(r.mesa) : '—'}${r.zona ? ' <span class="cell-sub">'+esc(r.zona)+'</span>' : ''}</td>
+          <td>${esc(r.mesa_label || (r.mesa != null ? 'Mesa ' + r.mesa : '—'))}${r.zona ? ' <span class="cell-sub">'+esc(r.zona)+'</span>' : ''}</td>
           <td>${esc(r.personas ?? '')}</td>
           <td><span class="badge-state">${esc(r.cover || 'no aplica')}</span></td>
         </tr>`).join('');
