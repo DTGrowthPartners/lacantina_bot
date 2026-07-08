@@ -665,6 +665,7 @@ async def accion_sync_chats_whapi(session: AsyncSession, params: dict) -> dict:
 
 
 from app.automatizaciones.heartbeat import accion_heartbeat as _accion_heartbeat
+from app.automatizaciones.reporte_semanal import accion_reporte_semanal_pdf
 
 
 ACCIONES_DISPONIBLES: dict[str, dict[str, Any]] = {
@@ -717,6 +718,16 @@ ACCIONES_DISPONIBLES: dict[str, dict[str, Any]] = {
         "handler": accion_recordatorio_pendientes,
         "descripcion": "Recordatorio de alertas/pendientes abiertas >Nh al grupo del equipo.",
         "parametros": {"destino_id": "@g.us o +57... (default grupo equipo)", "horas_min": "int", "max_alertas": "int"},
+    },
+    "reporte_semanal_pdf": {
+        "handler": accion_reporte_semanal_pdf,
+        "descripcion": "Genera un PDF de 1 pagina con estadisticas semanales y lo envia por WhatsApp.",
+        "parametros": {
+            "destino_id": "+57... o grupo @g.us",
+            "periodo": "semana_anterior|ultimos_7_dias",
+            "inicio": "YYYY-MM-DD opcional",
+            "fin": "YYYY-MM-DD opcional",
+        },
     },
     "mensaje_custom": {
         "handler": accion_mensaje_custom,
