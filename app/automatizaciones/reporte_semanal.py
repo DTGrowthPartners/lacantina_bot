@@ -447,7 +447,7 @@ def _draw_executive_report(c, data: dict[str, Any]) -> None:
     _rounded_box(c, left, 48, right - left, 66, radius=7, fill=colors.white, stroke=border)
     _draw_circle_icon(c, left + 38, 81, 24, colors.HexColor("#DCEBFF"), "bulb", blue)
     bullets = _conclusiones(data, top, second, sin_reserva, horas_top)
-    c.setFont("Helvetica", 8.7)
+    c.setFont("Helvetica", 9.3)
     c.setFillColor(navy)
     y = 96
     for bullet in bullets[:4]:
@@ -461,10 +461,10 @@ def _draw_executive_report(c, data: dict[str, Any]) -> None:
     c.setLineWidth(0.7)
     c.line(left, 37, right, 37)
     c.setFillColor(blue)
-    c.setFont("Helvetica", 12)
+    c.setFont("Helvetica", 12.8)
     c.drawCentredString(width / 2, 23, "Impulsamos crecimiento con estrategia, tecnologia y ejecucion.")
     c.setFillColor(colors.HexColor("#7A8290"))
-    c.setFont("Helvetica", 8.5)
+    c.setFont("Helvetica", 9)
     c.drawCentredString(width / 2, 10, "dtgrowthpartners.com | +57 300 7189383 | dairotraslavina.com")
 
 
@@ -519,7 +519,7 @@ def _conclusiones(
 
 def _section_title(c, text: str, x: float, y: float, color) -> None:
     c.setFillColor(color)
-    c.setFont("Helvetica-Bold", 13)
+    c.setFont("Helvetica-Bold", 13.8)
     c.drawString(x, y, text)
 
 
@@ -536,10 +536,10 @@ def _metric_card(c, x: float, y: float, w: float, h: float, label: str, value: s
     _rounded_box(c, x, y, w, h, radius=7, fill=colors.white, stroke=colors.HexColor("#DDE3EC"))
     _draw_icon(c, x + w / 2, y + 58, icon, color, 18)
     c.setFillColor(colors.black)
-    c.setFont("Helvetica", 7.8 if len(label) > 16 else 8.7)
+    c.setFont("Helvetica", 8.2 if len(label) > 16 else 9.2)
     c.drawCentredString(x + w / 2, y + 34, label)
     c.setFillColor(color)
-    c.setFont("Helvetica-Bold", 22)
+    c.setFont("Helvetica-Bold", 23)
     c.drawCentredString(x + w / 2, y + 12, value)
 
 
@@ -561,12 +561,12 @@ def _highlight_card(
     _rounded_box(c, x, y, w, h, radius=7, fill=fill, stroke=colors.Color(color.red, color.green, color.blue, alpha=0.25))
     _draw_circle_icon(c, x + w / 2, y + h - 24, 19, colors.Color(color.red, color.green, color.blue, alpha=0.12), icon, color)
     c.setFillColor(color)
-    c.setFont("Helvetica-Bold", 8.5)
+    c.setFont("Helvetica-Bold", 9)
     c.drawCentredString(x + w / 2, y + 43, title)
     c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 10.5)
+    c.setFont("Helvetica-Bold", 11)
     c.drawCentredString(x + w / 2, y + 27, main[:25])
-    c.setFont("Helvetica", 8.2)
+    c.setFont("Helvetica", 8.6)
     for idx, line in enumerate(_split_center(sub, 28)[:2]):
         c.drawCentredString(x + w / 2, y + 13 - idx * 10, line)
 
@@ -610,11 +610,11 @@ def _bar_chart(c, filas: list[dict[str, Any]], x: float, y: float, w: float, h: 
     scale_max = max(10, ((max_value + 39) // 40) * 40)
     avg = sum(values) / len(values) if values else 0
 
-    c.setFont("Helvetica-Bold", 7.5)
+    c.setFont("Helvetica-Bold", 8)
     c.setFillColor(colors.black)
     c.drawString(x + 36, y + h - 15, "Personas reservadas por dia")
     c.setFillColor(blue)
-    c.setFont("Helvetica", 7)
+    c.setFont("Helvetica", 7.4)
     c.drawRightString(right, y + h - 15, f"--- Promedio semanal: {avg:.0f}")
 
     c.setStrokeColor(colors.HexColor("#D7DEE8"))
@@ -624,7 +624,7 @@ def _bar_chart(c, filas: list[dict[str, Any]], x: float, y: float, w: float, h: 
         val = int(scale_max * i / 4)
         c.line(left, yy, right, yy)
         c.setFillColor(colors.HexColor("#5B6472"))
-        c.setFont("Helvetica", 6.5)
+        c.setFont("Helvetica", 6.9)
         c.drawRightString(left - 8, yy - 2, str(val))
 
     avg_y = bottom + (avg / scale_max * chart_h if scale_max else 0)
@@ -642,9 +642,9 @@ def _bar_chart(c, filas: list[dict[str, Any]], x: float, y: float, w: float, h: 
         c.setFillColor(blue)
         c.rect(cx - bar_w / 2, bottom, bar_w, bar_h, fill=1, stroke=0)
         c.setFillColor(colors.black)
-        c.setFont("Helvetica-Bold", 6.8)
+        c.setFont("Helvetica-Bold", 7.2)
         c.drawCentredString(cx, bottom + bar_h + 5, str(value))
-        c.setFont("Helvetica-Bold", 6.8)
+        c.setFont("Helvetica-Bold", 7.2)
         c.drawCentredString(cx, y + 10, _dia_label(fila["fecha"], incluir_mes=True))
 
     c.setStrokeColor(colors.HexColor("#8A94A6"))
@@ -663,7 +663,7 @@ def _daily_table(c, filas: list[dict[str, Any]], x: float, y: float, w: float, h
     c.setFillColor(blue)
     c.roundRect(x, y + h - row_h, w, row_h, 5, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 7.2)
+    c.setFont("Helvetica-Bold", 7.7)
     xx = x
     for idx, header in enumerate(headers):
         c.drawCentredString(xx + col_w[idx] / 2, y + h - row_h + 8, header)
@@ -689,7 +689,7 @@ def _daily_table(c, filas: list[dict[str, Any]], x: float, y: float, w: float, h
         xx = x
         for col, value in enumerate(values):
             c.setFillColor(estado_color if col == 3 else colors.black)
-            c.setFont("Helvetica-Bold" if col in (0, 3) else "Helvetica", 6.8)
+            c.setFont("Helvetica-Bold" if col in (0, 3) else "Helvetica", 7.2)
             c.drawCentredString(xx + col_w[col] / 2, yy + 7.5, value)
             xx += col_w[col]
 
