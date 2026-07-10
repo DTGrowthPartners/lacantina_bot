@@ -2,7 +2,11 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from app.claude.prompts import construir_system_prompt
-from app.flows.conversation import _enviar_link_menu, _normalizar_intent_por_reglas
+from app.flows.conversation import (
+    _enviar_link_menu,
+    _normalizar_intent_por_reglas,
+    _pide_plano_espacio,
+)
 from app.menu_media import MENU_URL, imagenes_menu, pide_imagen_menu, pide_menu
 
 
@@ -28,6 +32,23 @@ class MenuMediaTests(unittest.TestCase):
             "pide_estado",
             solicitud_menu=True,
             contenido_usuario="Buenas tardes, me envía la carta porfa?",
+            cliente_numero="+573001112233",
+        )
+
+        self.assertEqual(intent, "otro")
+
+    def test_detecta_pedido_explicito_de_plano(self):
+        self.assertTrue(_pide_plano_espacio("Enviame el plano"))
+        self.assertTrue(_pide_plano_espacio("mándame el plano porfa"))
+        self.assertTrue(_pide_plano_espacio("me mandas el mapa del salón?"))
+        self.assertFalse(_pide_plano_espacio("qué promo tienen hoy?"))
+
+    def test_plano_tiene_prioridad_si_clasificador_lo_confunde_con_estado(self):
+        intent = _normalizar_intent_por_reglas(
+            "pide_estado",
+            solicitud_menu=False,
+            solicitud_plano=True,
+            contenido_usuario="Enviame el plano",
             cliente_numero="+573001112233",
         )
 

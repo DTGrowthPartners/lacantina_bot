@@ -69,14 +69,35 @@ _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _INTENTS_ESCALACION_OBLIGATORIA = {"pide_humano", "queja"}
 
 
+def _pide_plano_espacio(texto: str) -> bool:
+    """Detecta pedidos explícitos del plano/mapa del salón."""
+    t = (texto or "").lower()
+    if not t.strip():
+        return False
+    if not re.search(r"\b(plano|mapa|distribuci[oó]n|croquis)\b", t):
+        return False
+    return bool(re.search(
+        r"\b(env[ií]a(?:me)?|m[aá]nd(?:a|ame|as)?|p[aá]sa(?:me)?|muestra(?:me)?|ver|dame|quiero|puedo ver)\b",
+        t,
+    ))
+
+
 def _normalizar_intent_por_reglas(
     intent: str,
     *,
     solicitud_menu: bool,
+    solicitud_plano: bool = False,
     contenido_usuario: str,
     cliente_numero: str,
 ) -> str:
     """Reglas deterministas que tienen prioridad sobre el clasificador."""
+    if solicitud_plano and intent == "pide_estado":
+        log.warning(
+            "flow.intent_estado_anulado_por_plano",
+            cliente=cliente_numero,
+            texto=contenido_usuario[:120],
+        )
+        return "otro"
     if solicitud_menu and intent == "pide_estado":
         log.warning(
             "flow.intent_estado_anulado_por_menu",
@@ -304,7 +325,7 @@ async def _enviar_plano_espacio(
         if png_bytes is None:
             png_bytes = _PLANO_ESPACIO.read_bytes()
 
-        cap = f"🗺️ Plano del salón — {fecha} (🔴 = ya reservada) ¡Escoge tu mesa!"
+        cap = f"🗺️ Plano público del salón — {fecha}. ¡Escoge tu mesa o zona favorita!"
         await enviar_imagen_bytes(
             cliente_numero, png_bytes, mime="image/png",
             filename="plano-espacio.png", caption=cap,
@@ -313,8 +334,7 @@ async def _enviar_plano_espacio(
             session, cliente_id=cliente_id, direccion="outbound", tipo="imagen",
             contenido="[plano del salón con reservas]", metadata={"media": "plano_espacio"},
         )
-        log.info("flow.plano_espacio.enviado", cliente=cliente_numero,
-                 fecha=fecha, reservadas=len(mesas_reservadas))
+        log.info("flow.plano_espacio.enviado", cliente=cliente_numero, fecha=fecha)
     except Exception as e:
         log.warning("flow.plano_espacio.fail", error=str(e))
 
@@ -448,6 +468,10 @@ async def procesar_mensaje_inbound(
             )
 
     solicitud_menu = pide_menu(msg.texto or contenido_usuario)
+    solicitud_plano = _pide_plano_espacio(msg.texto or contenido_usuario)
+    if solicitud_plano:
+        await _enviar_plano_espacio(session, cliente_id, cliente_numero)
+        return []
 
     # 1. Historial (hasta 30 msgs / 48h)
     historial_db = await ultimos_mensajes(session, cliente_id, n=30, horas_max=48)
@@ -482,6 +506,7 @@ async def procesar_mensaje_inbound(
     intent = _normalizar_intent_por_reglas(
         intent,
         solicitud_menu=solicitud_menu,
+        solicitud_plano=solicitud_plano,
         contenido_usuario=contenido_usuario,
         cliente_numero=cliente_numero,
     )
