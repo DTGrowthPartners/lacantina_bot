@@ -7,16 +7,28 @@ class PoliticaHorarioCoverTests(unittest.TestCase):
     def test_anota_evento_con_cover(self):
         respuesta = {
             "ok": True,
+            "evento": {"tiene_cover": True, "valor_cover": 30000, "hora_inicio": "17:00"},
+        }
+
+        resultado = _anotar_politica_horario_cover(respuesta)
+
+        politica = resultado["politica_horario_cover"]
+        self.assertIn("5:00 p. m.", politica)
+        self.assertIn("antes", politica)
+        self.assertIn("durante el evento", politica)
+        self.assertIn("debe retirarse", politica)
+
+    def test_anota_evento_con_cover_sin_hora_usa_regla_generica(self):
+        respuesta = {
+            "ok": True,
             "evento": {"tiene_cover": True, "valor_cover": 30000},
         }
 
         resultado = _anotar_politica_horario_cover(respuesta)
 
         politica = resultado["politica_horario_cover"]
-        self.assertIn("9:00 p. m.", politica)
-        self.assertIn("antes", politica)
-        self.assertIn("se queden al evento", politica)
-        self.assertIn("debe retirarse", politica)
+        self.assertIn("hora de inicio del evento", politica)
+        self.assertNotIn("9:00 p. m.", politica)
 
     def test_anota_reserva_con_cover_pendiente(self):
         respuesta = {

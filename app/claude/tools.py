@@ -29,12 +29,48 @@ from app.nombres import limpiar_nombre_reserva, validar_nombre_reserva
 
 
 _POLITICA_HORARIO_COVER = (
-    "REGLA OBLIGATORIA: en días de evento el cover aplica desde las 9:00 p. m. "
-    "a quienes ingresen desde esa hora y también a quienes hayan entrado antes "
-    "pero se queden al evento de las 9:00 p. m. o más tarde. Si alguien entra "
-    "antes y no quiere pagar cover, debe retirarse antes de las 9:00 p. m. "
-    "Acláralo siempre al cliente cuando menciones el cover."
+    "REGLA OBLIGATORIA: en días de evento el cover aplica desde la hora de inicio "
+    "del evento. Quien entra antes puede quedarse sin pagar solo hasta que empiece "
+    "el evento; si se queda durante el evento debe pagar cover. Si no quiere pagar, "
+    "debe retirarse antes de que empiece el evento. Acláralo siempre al cliente "
+    "cuando menciones el cover."
 )
+
+
+def _formatear_hora_cover(raw: object) -> str | None:
+    hora = str(raw or "").strip()
+    if not hora:
+        return None
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            dt = datetime.strptime(hora, fmt)
+            sufijo = "a. m." if dt.hour < 12 else "p. m."
+            hora12 = dt.hour % 12 or 12
+            return f"{hora12}:{dt.minute:02d} {sufijo}"
+        except ValueError:
+            pass
+    return hora
+
+
+def _politica_horario_cover_desde(candidatos: list[dict]) -> str:
+    for item in candidatos:
+        tiene_cover = (
+            item.get("tiene_cover") is True
+            or item.get("cover_estado") in {"pendiente", "anticipado", "en_entrada"}
+            or bool(item.get("monto_cover"))
+        )
+        if not tiene_cover:
+            continue
+        hora = _formatear_hora_cover(item.get("hora_inicio") or item.get("hora"))
+        if hora:
+            return (
+                f"REGLA OBLIGATORIA: en este evento el cover aplica desde las {hora}, "
+                "hora de inicio del evento. Quien entra antes puede quedarse sin pagar "
+                f"solo hasta las {hora}; si se queda durante el evento debe pagar cover. "
+                "Si no quiere pagar, debe retirarse antes de que empiece el evento. "
+                "Acláralo siempre al cliente cuando menciones el cover."
+            )
+    return _POLITICA_HORARIO_COVER
 
 
 def _anotar_politica_horario_cover(res: dict) -> dict:
@@ -64,7 +100,7 @@ def _anotar_politica_horario_cover(res: dict) -> dict:
         for item in candidatos
     )
     if aplica:
-        res["politica_horario_cover"] = _POLITICA_HORARIO_COVER
+        res["politica_horario_cover"] = _politica_horario_cover_desde(candidatos)
     return res
 
 

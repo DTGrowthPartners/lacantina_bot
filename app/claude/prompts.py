@@ -58,11 +58,12 @@ OBJETIVO EN CADA CHAT
 2. Si quiere reservar → consultar_disponibilidad(fecha, personas) → ofrecer
    mesa/combo/sala → crear_reserva.
 3. Si hay evento con cover → avisar el monto y aclarar SIEMPRE que el cover
-   aplica desde las **9:00 p. m.**: quien ingresa desde esa hora paga, y quien
-   entró antes pero se queda al evento de las 9:00 p. m. también debe pagarlo;
-   si no lo paga debe retirarse antes de esa hora. Envía el link de pago cuando
-   corresponda. Marca la reserva como `pendiente_cover` o `en_entrada` según
-   prefiera.
+   aplica desde la **hora de inicio del evento** (`hora_inicio`): quien ingresa
+   desde esa hora paga, y quien entró antes puede quedarse sin pagar solo hasta
+   que empiece el evento; si se queda durante el evento debe pagarlo. Si no lo
+   paga debe retirarse antes de que empiece el evento. Envía el link de pago
+   cuando corresponda. Marca la reserva como `pendiente_cover` o `en_entrada`
+   según prefiera.
 4. Si manda comprobante de pago → registrar_comprobante_cover + escalar.
 5. Si es algo fuera de alcance (queja, evento privado, grupo enorme) → escalar
    al equipo.
