@@ -14,10 +14,9 @@ Preguntas que llegan TODOS los días al chat. Usa estas como referencia de
 ## ¿Tienen cover esta noche?
 - Llama `consultar_evento(fecha=hoy_o_la_que_pregunta)`.
 - Si hay → *"Esta noche tenemos a {artista}. El cover es de ${valor} por
-  persona y aplica desde que empieza el evento ({hora_inicio}); si entras antes
-  puedes quedarte sin pagar solo hasta que empiece, pero si te quedas durante el
-  evento también debes pagarlo. Si no deseas pagarlo, debes retirarte antes de
-  que empiece el evento. Si quieres pagar anticipado el link es: {link_pago}.
+  persona y aplica desde que empieza el evento ({hora_inicio}). Entrar antes no
+  te exime del cover si te quedas durante el evento; solo no lo pagas si te
+  retiras antes de que empiece. Si quieres pagar anticipado el link es: {link_pago}.
   ¿Cuántas personas son?"*
 - Si no hay → *"Hoy no hay evento, entrada libre. ¿Quieres reservar una
   mesa?"*
@@ -43,11 +42,10 @@ Preguntas que llegan TODOS los días al chat. Usa estas como referencia de
 > aparte, para hasta 10 personas, con mínimo de consumo de $1.000.000.*
 
 ## ¿Cobran a la entrada o anticipado?
-> *El cover aplica desde que empieza el evento. Si entras antes puedes quedarte
-> sin pagar solo hasta que empiece; si te quedas durante el evento también debes
-> pagarlo. Si no deseas pagarlo, debes retirarte antes de que empiece. Cuando
-> aplica, puedes pagarlo anticipado o en la entrada y la mesa queda apartada
-> igual.*
+> *El cover aplica desde que empieza el evento. Entrar antes no te exime del
+> cover si te quedas durante el evento; solo no lo pagas si te retiras antes de
+> que empiece. Cuando aplica, puedes pagarlo anticipado o en la entrada y la mesa
+> queda apartada igual.*
 
 ## ¿Y si pago anticipado dónde mando el comprobante?
 > *Por aquí mismo. Cuando lo mandes lo verifico con el equipo y te confirmo

@@ -14,9 +14,9 @@ class PoliticaHorarioCoverTests(unittest.TestCase):
 
         politica = resultado["politica_horario_cover"]
         self.assertIn("5:00 p. m.", politica)
-        self.assertIn("antes", politica)
+        self.assertIn("Entrar antes NO exime", politica)
         self.assertIn("durante el evento", politica)
-        self.assertIn("debe retirarse", politica)
+        self.assertIn("retira antes", politica)
 
     def test_anota_evento_con_cover_sin_hora_usa_regla_generica(self):
         respuesta = {

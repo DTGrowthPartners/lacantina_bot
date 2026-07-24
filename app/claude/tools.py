@@ -30,9 +30,9 @@ from app.nombres import limpiar_nombre_reserva, validar_nombre_reserva
 
 _POLITICA_HORARIO_COVER = (
     "REGLA OBLIGATORIA: en días de evento el cover aplica desde la hora de inicio "
-    "del evento. Quien entra antes puede quedarse sin pagar solo hasta que empiece "
-    "el evento; si se queda durante el evento debe pagar cover. Si no quiere pagar, "
-    "debe retirarse antes de que empiece el evento. Acláralo siempre al cliente "
+    "del evento. Entrar antes NO exime del cover si la persona se queda durante "
+    "el evento; solo no paga cover quien se retira antes de que empiece. "
+    "Acláralo siempre al cliente "
     "cuando menciones el cover."
 )
 
@@ -65,9 +65,9 @@ def _politica_horario_cover_desde(candidatos: list[dict]) -> str:
         if hora:
             return (
                 f"REGLA OBLIGATORIA: en este evento el cover aplica desde las {hora}, "
-                "hora de inicio del evento. Quien entra antes puede quedarse sin pagar "
-                f"solo hasta las {hora}; si se queda durante el evento debe pagar cover. "
-                "Si no quiere pagar, debe retirarse antes de que empiece el evento. "
+                "hora de inicio del evento. Entrar antes NO exime del cover si la "
+                "persona se queda durante el evento; solo no paga cover quien se "
+                "retira antes de esa hora. "
                 "Acláralo siempre al cliente cuando menciones el cover."
             )
     return _POLITICA_HORARIO_COVER

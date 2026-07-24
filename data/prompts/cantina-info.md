@@ -125,10 +125,9 @@ contiguas**. Incluso se puede reservar **un pasillo entero**.
 
 - ~1 evento al mes con cantante invitado y **cover por persona**.
 - El cover aplica **desde la hora de inicio del evento** (`hora_inicio`). Quien
-  ingresa desde esa hora paga cover, y quien ingresó antes pero se queda durante
-  el evento también debe pagarlo.
-- Quien entra antes y no desea pagar cover puede quedarse sin pagar solo hasta
-  que empiece el evento; debe retirarse antes de que empiece.
+  ingresa desde esa hora paga cover.
+- Entrar antes **NO exime del cover** si la persona se queda durante el evento.
+  Solo no paga cover quien se retira antes de que empiece.
 - Esta regla depende de la **hora real de ingreso y permanencia**, no de la hora
   en que se hizo la reserva. Nunca prometas exención a alguien que piensa llegar
   desde la hora de inicio del evento o quedarse al evento con cover.
