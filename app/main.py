@@ -817,12 +817,16 @@ async def webhook_get() -> dict[str, str]:
 
 # Nombre del bot ("Nikki"/"Nicky") como wake word para interpelarlo en el grupo.
 # Clave para notas de voz: no pueden llevar @mención, así que el equipo lo nombra
-# hablando. Incluimos variantes que el transcriptor suele soltar (niki, niqui…).
-_WAKE_RE = re.compile(r"\bn[ií](?:kk|ck|qu|k|c)[iy]\b", re.IGNORECASE)
+# hablando. Incluimos variantes que el transcriptor suele soltar (niki, niqui)
+# y el nombre visible de WhatsApp por si Whapi no entrega `context.mentions`.
+_WAKE_RE = re.compile(
+    r"\b(?:n[ií](?:kk|ck|qu|k|c)[iy]|la\s+cantina\s+plus|cantina\s+plus)\b",
+    re.IGNORECASE,
+)
 
 
 def _menciona_nikki(texto: str | None) -> bool:
-    """True si el texto nombra al bot (Nikki/Nicky y variantes fonéticas)."""
+    """True si el texto nombra al bot (Nicky, La Cantina Plus y variantes)."""
     return bool(_WAKE_RE.search(texto or ""))
 
 
