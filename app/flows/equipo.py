@@ -315,7 +315,13 @@ def _pide_reabrir_reservas_hoy(texto: str | None) -> bool:
 
 def _mes_pedido_eventos(texto: str) -> str | None:
     limpio = re.sub(r"@\d+", " ", texto or "").lower()
-    if "evento" not in limpio:
+    pide_listado = (
+        "agenda" in limpio
+        or re.search(r"\beventos\b", limpio)
+        or re.search(r"\bevento\b.*\b(?:este|el)\s+mes\b", limpio)
+        or re.search(r"\b(?:este|el)\s+mes\b.*\bevento\b", limpio)
+    )
+    if not pide_listado:
         return None
     ahora = datetime.now(ZoneInfo("America/Bogota"))
     m_iso = re.search(r"\b(20\d{2})-(0[1-9]|1[0-2])\b", limpio)
@@ -360,7 +366,14 @@ def _formatear_eventos_mes(res: dict, mes: str) -> str:
         detalle += f" - {nombre}"
         if artista:
             detalle += f" ({artista})"
-        lineas.append(f"- {detalle} · {cover_txt}")
+        partes = [detalle, cover_txt]
+        descripcion = str(e.get("descripcion") or "").strip()
+        link_pago = str(e.get("link_pago") or "").strip()
+        if descripcion:
+            partes.append(descripcion)
+        if link_pago:
+            partes.append(f"Link pago: {link_pago}")
+        lineas.append("- " + " · ".join(partes))
     return "\n".join(lineas)
 
 
@@ -499,6 +512,7 @@ async def procesar_mensaje_equipo(
         return
     if not instruccion:
         instruccion = "[Imagen sin texto; analízala y dime qué necesitas saber o qué acción quieres que tome.]"
+    instruccion_usuario = instruccion
 
     # Si el equipo cita un mensaje (típicamente un mensaje del bot/cliente),
     # inyectarlo al contexto: "Fabio citó X, su respuesta es Y"
@@ -877,7 +891,7 @@ async def procesar_mensaje_equipo(
         )
         return
 
-    mes_eventos = _mes_pedido_eventos(instruccion)
+    mes_eventos = _mes_pedido_eventos(instruccion_usuario)
     if mes_eventos and not imagen_b64 and msg.tipo == "texto":
         result = await HANDLERS_EQUIPO["eventos_del_mes"]({"mes": mes_eventos}, ctx_tool)
         texto_final = _formatear_eventos_mes(result, mes_eventos)

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 from app.claude import tools, tools_equipo
 from app.event_media import clave_evento
 from app.eventos import extraer_eventos, resumen_eventos
+from app.flows.equipo import _formatear_eventos_mes, _mes_pedido_eventos
 
 
 class EventosMultiplesTests(unittest.IsolatedAsyncioTestCase):
@@ -68,6 +69,34 @@ class EventosMultiplesTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(res["total"], 2)
         self.assertEqual([e["nombre"] for e in res["eventos"]], ["Partido", "Show noche"])
+
+    def test_equipo_eventos_mes_no_secuestra_consulta_puntual(self):
+        self.assertEqual(_mes_pedido_eventos("qué eventos hay en agosto"), "2026-08")
+        self.assertEqual(_mes_pedido_eventos("agenda de eventos del mes"), "2026-07")
+        self.assertIsNone(_mes_pedido_eventos("dame todos los datos del evento del 22 de agosto"))
+        self.assertIsNone(_mes_pedido_eventos("ya tiene link de pago?"))
+
+    def test_formatear_eventos_mes_incluye_link_pago(self):
+        texto = _formatear_eventos_mes(
+            {
+                "ok": True,
+                "eventos": [
+                    {
+                        "fecha": "2026-08-22",
+                        "hora_inicio": "17:00",
+                        "nombre": "Yo me llamo Arelys Henao",
+                        "artista": "Arelys Henao",
+                        "tiene_cover": True,
+                        "valor_cover": 20000,
+                        "link_pago": "https://app.lulopass.com/share/events/demo",
+                    }
+                ],
+            },
+            "2026-08",
+        )
+
+        self.assertIn("Link pago: https://app.lulopass.com/share/events/demo", texto)
+        self.assertIn("Cover $20.000", texto)
 
     def test_clave_flyer_depende_de_fecha_y_hora(self):
         self.assertEqual(clave_evento("2026-07-03", "18:00"), "2026-07-03__18-00")
