@@ -74,6 +74,25 @@ def _es_media_comprobante(msg: MensajeWhapi) -> bool:
     return bool(msg.media_url and msg.tipo in _TIPOS_COMPROBANTE_MEDIA)
 
 
+def _esperaba_confirmacion_reserva(historial_db: list) -> bool:
+    """Detecta si el último outbound del bot pedía confirmar una reserva pendiente."""
+    ultimo_outbound = next(
+        (
+            getattr(h, "contenido", "") or ""
+            for h in reversed(historial_db)
+            if getattr(h, "direccion", None) in ("outbound", "humano")
+            and getattr(h, "contenido", None)
+        ),
+        "",
+    )
+    if not ultimo_outbound:
+        return False
+    texto = ultimo_outbound.lower()
+    if not re.search(r"\bconfirm(?:amos|ar|as|o|e|en)\b", texto):
+        return False
+    return bool(re.search(r"\bmesa|reserva|personas|a nombre de\b", texto))
+
+
 def _pide_plano_espacio(texto: str) -> bool:
     """Detecta pedidos explícitos del plano/mapa del salón."""
     t = (texto or "").lower()
@@ -454,7 +473,8 @@ async def procesar_mensaje_inbound(
         elif msg.tipo in {"pdf", "documento"} and msg.media_url:
             contenido_usuario = (
                 "[El cliente envió un archivo PDF/documento sin texto. "
-                "Si el contexto reciente habla de pago, cover o reserva, trátalo como comprobante de pago.]"
+                "Si el contexto reciente habla de pago, cover o reserva, trátalo como: "
+                "'sí, confirmo la reserva y envío el comprobante de pago'.]"
             )
         else:
             log.info("flow.inbound_sin_texto", cliente=cliente_numero, tipo=msg.tipo)
@@ -485,6 +505,7 @@ async def procesar_mensaje_inbound(
 
     # 1. Historial (hasta 30 msgs / 48h)
     historial_db = await ultimos_mensajes(session, cliente_id, n=30, horas_max=48)
+    comprobante_confirma_reserva = _es_media_comprobante(msg) and _esperaba_confirmacion_reserva(historial_db)
     nombre_reserva_confirmado = _nombre_reserva_explicito(contenido_usuario, historial_db)
     ahora_utc = datetime.now(timezone.utc)
     umbral_gap = ahora_utc - timedelta(hours=12)
@@ -596,8 +617,23 @@ async def procesar_mensaje_inbound(
         "incoming_media_mime": imagen_mime or msg.media_mime,
         "nombre_reserva_confirmado": nombre_reserva_confirmado,
         "enviar_carta_link": solicitud_menu,
+        "comprobante_confirma_reserva": comprobante_confirma_reserva,
     }
     extra_system = await _construir_contexto_cliente(session, cliente_id, cliente_numero)
+    if comprobante_confirma_reserva:
+        extra_system += (
+            "\n\n## COMPROBANTE COMO CONFIRMACIÓN DE RESERVA\n"
+            "El cliente acaba de enviar un comprobante (imagen/PDF/documento) justo después "
+            "de que le pediste confirmar una reserva pendiente. Interpreta ese adjunto como: "
+            "\"sí, confirmo la reserva y envío el comprobante de pago\".\n"
+            "- Si en el historial ya están fecha, mesa(s) o sala, personas, teléfono y nombre, "
+            "NO preguntes de nuevo si confirma: crea la reserva con esos datos.\n"
+            "- Si la reserva creada tiene cover pendiente/anticipado o el cliente pagó cover, "
+            "después de crearla llama `registrar_comprobante_cover` con el ID de la reserva "
+            "para dejarla marcada como anticipada pendiente de verificación humana.\n"
+            "- Si falta un dato obligatorio, pregunta únicamente ese dato faltante y conserva "
+            "el comprobante como recibido; no reinicies el flujo."
+        )
     if solicitud_menu:
         extra_system += (
             "\n\n## SOLICITUD DE MENÚ DETECTADA\n"

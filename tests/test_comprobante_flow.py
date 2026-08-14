@@ -1,11 +1,34 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app import notif_equipo
 from app.claude import tools
+from app.flows.conversation import _esperaba_confirmacion_reserva
 
 
 class ComprobanteFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_detecta_comprobante_como_confirmacion_de_reserva(self):
+        historial = [
+            SimpleNamespace(direccion="inbound", contenido="A nombre de Santiago Gallo"),
+            SimpleNamespace(
+                direccion="outbound",
+                contenido=(
+                    "Resumen antes de confirmar: mesa 17, 4 personas, "
+                    "a nombre de Santiago Gallo. ¿Confirmamos?"
+                ),
+            ),
+        ]
+
+        self.assertTrue(_esperaba_confirmacion_reserva(historial))
+
+    async def test_no_detecta_confirmacion_en_outbound_generico(self):
+        historial = [
+            SimpleNamespace(direccion="outbound", contenido="Cuando pagues mándame el comprobante."),
+        ]
+
+        self.assertFalse(_esperaba_confirmacion_reserva(historial))
+
     async def test_notification_prefers_downloaded_image_bytes(self):
         with (
             patch.object(
