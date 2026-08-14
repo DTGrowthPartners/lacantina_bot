@@ -40,6 +40,44 @@ class ComprobanteFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         descargar.assert_not_awaited()
 
+    async def test_notification_sends_pdf_as_document(self):
+        with (
+            patch.object(
+                notif_equipo.settings,
+                "equipo_cantina_group_id",
+                "equipo@g.us",
+            ),
+            patch.object(
+                notif_equipo,
+                "enviar_documento_bytes",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as enviar_documento,
+            patch.object(
+                notif_equipo,
+                "enviar_imagen_bytes",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as enviar_imagen,
+            patch.object(
+                notif_equipo,
+                "_descargar_media",
+                new=AsyncMock(return_value=(b"%PDF", "application/pdf")),
+            ),
+        ):
+            sent = await notif_equipo.notificar_equipo(
+                "Comprobante PDF",
+                media_url="https://example.test/comprobante.pdf",
+            )
+
+        self.assertTrue(sent)
+        enviar_documento.assert_awaited_once_with(
+            "equipo@g.us",
+            b"%PDF",
+            mime="application/pdf",
+            filename="comprobante.pdf",
+            caption="Comprobante PDF",
+        )
+        enviar_imagen.assert_not_awaited()
+
     async def test_escalacion_enriches_existing_receipt_without_duplicate(self):
         outbox = [{
             "tipo": "comprobante_cover",

@@ -18,6 +18,7 @@ from app.logging_setup import log
 from app.whapi.client import (
     auth_headers,
     enviar_botones,
+    enviar_documento_bytes,
     enviar_imagen_bytes,
     enviar_texto,
 )
@@ -27,6 +28,52 @@ settings = get_settings()
 # Límite de descarga para reenvío de comprobantes al grupo (whapi sirve la
 # media tras auth; replicamos el mismo tope que usamos al leer imágenes del cliente).
 _MAX_MEDIA_BYTES = 16 * 1024 * 1024
+
+
+def _mime_base(mime: str | None) -> str:
+    return (mime or "").split(";", 1)[0].strip().lower()
+
+
+def _es_imagen(mime: str | None) -> bool:
+    return _mime_base(mime).startswith("image/")
+
+
+def _filename_media(mime: str | None) -> str:
+    base = _mime_base(mime)
+    if base == "application/pdf":
+        return "comprobante.pdf"
+    if base.endswith("png"):
+        return "comprobante.png"
+    if base.endswith("webp"):
+        return "comprobante.webp"
+    if base.endswith("jpeg") or base.endswith("jpg"):
+        return "comprobante.jpg"
+    return "comprobante"
+
+
+async def _enviar_media_equipo(
+    grupo: str,
+    data: bytes,
+    *,
+    mime: str | None,
+    caption: str,
+) -> None:
+    mime_final = mime or "application/octet-stream"
+    if _es_imagen(mime_final):
+        await enviar_imagen_bytes(
+            grupo,
+            data,
+            mime=mime_final,
+            caption=caption,
+        )
+        return
+    await enviar_documento_bytes(
+        grupo,
+        data,
+        mime=mime_final,
+        filename=_filename_media(mime_final),
+        caption=caption,
+    )
 
 
 async def notificar_equipo(
@@ -39,7 +86,7 @@ async def notificar_equipo(
     """Envía un mensaje al grupo del equipo de La Cantina.
 
     Si `media_url` viene dado (p. ej. el comprobante de pago que mandó un
-    cliente), descarga la imagen y la reenvía al grupo con `texto` como
+    cliente), descarga el archivo y lo reenvía al grupo con `texto` como
     caption. Así el equipo ve el comprobante directo en el grupo de reservas,
     sin tener que ir al chat del cliente.
 
@@ -55,7 +102,7 @@ async def notificar_equipo(
     grupo = settings.equipo_cantina_group_id
     try:
         if media_bytes:
-            await enviar_imagen_bytes(
+            await _enviar_media_equipo(
                 grupo,
                 media_bytes,
                 mime=media_mime or "image/jpeg",
@@ -63,10 +110,10 @@ async def notificar_equipo(
             )
             return True
         if media_url:
-            imagen = await _descargar_media(media_url)
-            if imagen is not None:
-                data, mime = imagen
-                await enviar_imagen_bytes(grupo, data, mime=mime, caption=texto)
+            media = await _descargar_media(media_url)
+            if media is not None:
+                data, mime = media
+                await _enviar_media_equipo(grupo, data, mime=media_mime or mime, caption=texto)
                 return True
             # Si la descarga falló, no perdemos el aviso: mandamos el texto
             # (que ya incluye el link "Verificar: <url>") como fallback.
@@ -92,7 +139,7 @@ async def _descargar_media(media_url: str) -> tuple[bytes, str] | None:
         if len(r.content) > _MAX_MEDIA_BYTES:
             log.warning("notif_equipo.media_too_big", size=len(r.content))
             return None
-        mime = r.headers.get("content-type") or "image/jpeg"
+        mime = r.headers.get("content-type") or "application/octet-stream"
         return r.content, mime
     except Exception as e:
         log.warning("notif_equipo.media_download_fail", error=str(e))

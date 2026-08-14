@@ -725,7 +725,7 @@ TOOL_DEFINITIONS: list[dict] = [
         "description": (
             "Cuando el cliente envía comprobante de pago del cover, marca la reserva "
             "como 'anticipado' (pendiente verificación humana) y escala al equipo. "
-            "La imagen actual se toma automáticamente del contexto; NO inventes ni "
+            "La imagen/PDF actual se toma automáticamente del contexto; NO inventes ni "
             "pidas una URL."
         ),
         "input_schema": {
@@ -1335,7 +1335,7 @@ async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
     if not (reserva_id and url):
         return {
             "ok": False,
-            "error": "reserva_id y una imagen de comprobante son requeridos",
+            "error": "reserva_id y una imagen/PDF de comprobante son requeridos",
         }
     # Verificar que la reserva sea del cliente antes de tocarla.
     det = await cantina_api.detalle_reserva(reserva_id)

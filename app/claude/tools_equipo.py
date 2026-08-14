@@ -1174,11 +1174,11 @@ async def handler_borrar_ultimo_estado(args: dict, ctx: dict) -> dict:
 
 
 async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
-    """Recupera la última imagen que mandó un cliente (su comprobante) y la
+    """Recupera el último archivo que mandó un cliente (su comprobante) y lo
     reenvía al chat actual (el grupo del equipo)."""
-    from app.db.repos import ultima_imagen_inbound
+    from app.db.repos import ultimo_comprobante_inbound
     from app.whapi.parser import normalizar_numero
-    from app.whapi.client import auth_headers, enviar_imagen_bytes
+    from app.whapi.client import auth_headers, enviar_documento_bytes, enviar_imagen_bytes
 
     tel = normalizar_numero((args.get("telefono") or "").strip())
     if not tel:
@@ -1190,10 +1190,10 @@ async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
     if session is None:
         return {"ok": False, "error": "sin sesión de BD"}
 
-    conv = await ultima_imagen_inbound(session, tel)
+    conv = await ultimo_comprobante_inbound(session, tel)
     if not conv or not conv.media_url:
         return {"ok": False, "error": (
-            f"No encuentro ninguna imagen reciente enviada por {tel}. "
+            f"No encuentro ningún comprobante reciente enviado por {tel}. "
             "Verifica el número o pídele al cliente que reenvíe el comprobante."
         )}
 
@@ -1204,15 +1204,26 @@ async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
         if r.status_code >= 400 or not r.content:
             log.warning("tools_equipo.reenviar_comprobante.download_http",
                         status=r.status_code, tel=tel)
-            return {"ok": False, "error": "no pude descargar la imagen del cliente (link expirado)"}
-        mime = r.headers.get("content-type") or "image/jpeg"
-        await enviar_imagen_bytes(
-            destino, r.content, mime=mime,
-            caption=f"📎 Comprobante de {tel} (reenviado al grupo)",
-        )
+            return {"ok": False, "error": "no pude descargar el comprobante del cliente (link expirado)"}
+        header_mime = (r.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+        stored_mime = (conv.media_mime or "").split(";", 1)[0].strip()
+        mime = stored_mime if header_mime in {"", "application/octet-stream"} else header_mime
+        mime = mime or "application/octet-stream"
+        caption = f"📎 Comprobante de {tel} (reenviado al grupo)"
+        if mime.lower().startswith("image/"):
+            await enviar_imagen_bytes(destino, r.content, mime=mime, caption=caption)
+        else:
+            filename = "comprobante.pdf" if mime.lower() == "application/pdf" else "comprobante"
+            await enviar_documento_bytes(
+                destino,
+                r.content,
+                mime=mime,
+                filename=filename,
+                caption=caption,
+            )
     except Exception as e:
         log.warning("tools_equipo.reenviar_comprobante.fail", tel=tel, error=str(e))
-        return {"ok": False, "error": f"no se pudo reenviar la imagen: {str(e)[:160]}"}
+        return {"ok": False, "error": f"no se pudo reenviar el comprobante: {str(e)[:160]}"}
     log.info("tools_equipo.reenviar_comprobante_cliente", tel=tel, destino=destino)
     return {"ok": True, "nota": f"Comprobante de {tel} reenviado a este grupo. "
                                 "Confírmalo brevemente en tu texto."}

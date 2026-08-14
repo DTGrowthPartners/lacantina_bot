@@ -67,6 +67,11 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
 _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _INTENTS_ESCALACION_OBLIGATORIA = {"pide_humano", "queja"}
+_TIPOS_COMPROBANTE_MEDIA = {"imagen", "pdf", "documento"}
+
+
+def _es_media_comprobante(msg: MensajeWhapi) -> bool:
+    return bool(msg.media_url and msg.tipo in _TIPOS_COMPROBANTE_MEDIA)
 
 
 def _pide_plano_espacio(texto: str) -> bool:
@@ -446,6 +451,11 @@ async def procesar_mensaje_inbound(
     if not contenido_usuario.strip():
         if msg.tipo == "imagen" and msg.media_url:
             contenido_usuario = "[El cliente envió una imagen sin texto.]"
+        elif msg.tipo in {"pdf", "documento"} and msg.media_url:
+            contenido_usuario = (
+                "[El cliente envió un archivo PDF/documento sin texto. "
+                "Si el contexto reciente habla de pago, cover o reserva, trátalo como comprobante de pago.]"
+            )
         else:
             log.info("flow.inbound_sin_texto", cliente=cliente_numero, tipo=msg.tipo)
             return []
@@ -510,6 +520,9 @@ async def procesar_mensaje_inbound(
         contenido_usuario=contenido_usuario,
         cliente_numero=cliente_numero,
     )
+    if _es_media_comprobante(msg) and msg.tipo in {"pdf", "documento"}:
+        intent = "envia_comprobante_pago"
+        log.info("flow.intent_pdf_comprobante", cliente=cliente_numero)
 
     if intent == "pide_estado":
         from app import promo_estado as _pe
@@ -540,18 +553,20 @@ async def procesar_mensaje_inbound(
 
     # 4. Contexto dinámico del cliente + tool use loop
     outbox: list[dict] = []
-    if intent == "envia_comprobante_pago" and msg.tipo == "imagen" and msg.media_url:
+    if intent == "envia_comprobante_pago" and _es_media_comprobante(msg):
+        es_pdf = msg.tipo in {"pdf", "documento"}
         outbox.append({
             "tipo": "comprobante_cover",
             "mensaje": (
                 "💸 *Comprobante de pago recibido*\n"
                 f"Cliente: {cliente_numero}\n\n"
-                "Verifica la imagen. Para aprobar el pago y avisarle al cliente, "
+                f"Verifica el {'PDF/documento' if es_pdf else 'comprobante'}. "
+                "Para aprobar el pago y avisarle al cliente, "
                 "menciona a Nicky e indica el cliente o la reserva."
             ),
             "media_url": msg.media_url,
-            "media_bytes": imagen_bytes,
-            "media_mime": imagen_mime or msg.media_mime or "image/jpeg",
+            "media_bytes": None if es_pdf else imagen_bytes,
+            "media_mime": imagen_mime or msg.media_mime or ("application/pdf" if es_pdf else "image/jpeg"),
             "cliente_numero": cliente_numero,
             "whapi_message_id": msg.id,
         })
