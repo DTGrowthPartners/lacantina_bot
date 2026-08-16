@@ -138,6 +138,8 @@ def _asegurar_escalacion_humana(
     intent: str,
     cliente_numero: str,
     mensaje_cliente: str,
+    media_url: str | None = None,
+    media_mime: str | None = None,
 ) -> bool:
     """Encola el aviso si Claude omitio la tool en un caso humano obligatorio."""
     if intent not in _INTENTS_ESCALACION_OBLIGATORIA:
@@ -146,7 +148,7 @@ def _asegurar_escalacion_humana(
         return False
 
     mensaje = (mensaje_cliente or "").strip() or "[Mensaje sin texto]"
-    outbox.append({
+    item = {
         "clase": "escalacion",
         "tipo": intent,
         "mensaje": (
@@ -155,7 +157,11 @@ def _asegurar_escalacion_humana(
             f"Consulta: {mensaje[:800]}"
         ),
         "cliente_numero": cliente_numero,
-    })
+    }
+    if media_url:
+        item["media_url"] = media_url
+        item["media_mime"] = media_mime
+    outbox.append(item)
     return True
 
 
@@ -615,6 +621,7 @@ async def procesar_mensaje_inbound(
         "incoming_media_url": msg.media_url,
         "incoming_media_bytes": imagen_bytes,
         "incoming_media_mime": imagen_mime or msg.media_mime,
+        "incoming_media_tipo": msg.tipo,
         "nombre_reserva_confirmado": nombre_reserva_confirmado,
         "enviar_carta_link": solicitud_menu,
         "comprobante_confirma_reserva": comprobante_confirma_reserva,
@@ -670,6 +677,8 @@ async def procesar_mensaje_inbound(
         intent=intent,
         cliente_numero=cliente_numero,
         mensaje_cliente=contenido_usuario,
+        media_url=msg.media_url if msg.tipo == "audio" else None,
+        media_mime=msg.media_mime or ("audio/ogg" if msg.tipo == "audio" else None),
     ):
         log.warning(
             "flow.escalacion_humana_auto_encolada",

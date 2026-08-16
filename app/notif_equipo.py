@@ -42,6 +42,14 @@ def _filename_media(mime: str | None) -> str:
     base = _mime_base(mime)
     if base == "application/pdf":
         return "comprobante.pdf"
+    if base in {"audio/ogg", "audio/opus"}:
+        return "audio-cliente.ogg"
+    if base in {"audio/mpeg", "audio/mp3"}:
+        return "audio-cliente.mp3"
+    if base in {"audio/mp4", "audio/m4a"}:
+        return "audio-cliente.m4a"
+    if base.startswith("audio/"):
+        return "audio-cliente"
     if base.endswith("png"):
         return "comprobante.png"
     if base.endswith("webp"):

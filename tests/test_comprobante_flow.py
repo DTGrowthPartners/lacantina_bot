@@ -101,6 +101,44 @@ class ComprobanteFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         enviar_imagen.assert_not_awaited()
 
+    async def test_notification_sends_audio_as_document_with_audio_filename(self):
+        with (
+            patch.object(
+                notif_equipo.settings,
+                "equipo_cantina_group_id",
+                "equipo@g.us",
+            ),
+            patch.object(
+                notif_equipo,
+                "enviar_documento_bytes",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as enviar_documento,
+            patch.object(
+                notif_equipo,
+                "enviar_imagen_bytes",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as enviar_imagen,
+            patch.object(
+                notif_equipo,
+                "_descargar_media",
+                new=AsyncMock(return_value=(b"OggS", "audio/ogg")),
+            ),
+        ):
+            sent = await notif_equipo.notificar_equipo(
+                "Audio no entendido",
+                media_url="https://example.test/voz.ogg",
+            )
+
+        self.assertTrue(sent)
+        enviar_documento.assert_awaited_once_with(
+            "equipo@g.us",
+            b"OggS",
+            mime="audio/ogg",
+            filename="audio-cliente.ogg",
+            caption="Audio no entendido",
+        )
+        enviar_imagen.assert_not_awaited()
+
     async def test_escalacion_enriches_existing_receipt_without_duplicate(self):
         outbox = [{
             "tipo": "comprobante_cover",
@@ -122,6 +160,28 @@ class ComprobanteFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["comprobante_adjuntado"])
         self.assertEqual(len(outbox), 1)
         self.assertIn("Transferencia por $100.000", outbox[0]["mensaje"])
+
+    async def test_tool_escalacion_adjunta_audio_entrante(self):
+        outbox = []
+        ctx = {
+            "cliente_id": 10,
+            "cliente_numero": "+573001112233",
+            "intent": "pide_humano",
+            "outbox": outbox,
+            "incoming_media_tipo": "audio",
+            "incoming_media_url": "https://example.test/voz.ogg",
+            "incoming_media_mime": "audio/ogg",
+        }
+
+        result = await tools.handler_escalar_a_equipo(
+            {"tipo": "pide_humano", "mensaje": "No pude entender la nota de voz."},
+            ctx,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(outbox[0]["media_url"], "https://example.test/voz.ogg")
+        self.assertEqual(outbox[0]["media_mime"], "audio/ogg")
+        self.assertIn("Nota de voz adjunta", outbox[0]["mensaje"])
 
     async def test_register_receipt_uses_media_from_context(self):
         outbox = [{

@@ -1507,13 +1507,21 @@ async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
                     cliente_id=ctx.get("cliente_id"),
                 )
                 return {"ok": True, "escalado": True, "comprobante_adjuntado": True}
-        outbox.append({
+        item = {
             "clase": "escalacion",
             "tipo": args.get("tipo", "otro"),
             "mensaje": args.get("mensaje") or "Escalación sin detalle",
             "cliente_id": ctx.get("cliente_id"),
             "cliente_numero": ctx.get("cliente_numero"),
-        })
+        }
+        if ctx.get("incoming_media_tipo") == "audio" and ctx.get("incoming_media_url"):
+            item["media_url"] = ctx.get("incoming_media_url")
+            item["media_mime"] = ctx.get("incoming_media_mime") or "audio/ogg"
+            item["mensaje"] = (
+                f"{item['mensaje']}\n\n"
+                "🎙️ Nota de voz adjunta para que el equipo la escuche."
+            )
+        outbox.append(item)
     log.info("tools.escalar_a_equipo",
              tipo=args.get("tipo"), cliente_id=ctx.get("cliente_id"))
     return {"ok": True, "escalado": True}

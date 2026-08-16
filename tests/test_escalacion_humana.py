@@ -45,3 +45,19 @@ class EscalacionHumanaTests(unittest.TestCase):
 
         self.assertFalse(agregada)
         self.assertEqual(outbox, [])
+
+    def test_adjunta_audio_en_escalacion_auto(self):
+        outbox = []
+
+        agregada = _asegurar_escalacion_humana(
+            outbox,
+            intent="pide_humano",
+            cliente_numero="+573001112233",
+            mensaje_cliente="[El cliente envió una nota de voz, pero no pude entenderla.]",
+            media_url="https://example.test/audio.ogg",
+            media_mime="audio/ogg",
+        )
+
+        self.assertTrue(agregada)
+        self.assertEqual(outbox[0]["media_url"], "https://example.test/audio.ogg")
+        self.assertEqual(outbox[0]["media_mime"], "audio/ogg")
