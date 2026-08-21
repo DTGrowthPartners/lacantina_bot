@@ -27,7 +27,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.claude.client import conversar
@@ -36,6 +36,7 @@ from app.config import get_settings
 from app.db.models import Cliente, Conversacion
 from app.db.repos import bot_activo, guardar_conversacion, ultimos_mensajes
 from app.event_media import MIME, flyer_path_evento
+from app.integrations import cantina_api
 from app.logging_setup import log
 from app.menu_media import MENU_URL, pide_menu
 from app.nombres import limpiar_nombre_reserva
@@ -67,99 +68,225 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
 _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _INTENTS_ESCALACION_OBLIGATORIA = {"pide_humano", "queja"}
-_TIPOS_COMPROBANTE_MEDIA = {"imagen", "pdf", "documento"}
-_RE_COMPROBANTE_EXPLICITO = re.compile(
-    r"\b("
-    r"comprobante|soporte|recibo|captura|pantallazo|transfer(?:encia)?|"
-    r"nequi|daviplata|bancolombia|consignaci[oó]n|pag(?:o|ue|ué|ado|ada)|cover"
-    r")\b",
-    re.IGNORECASE,
-)
+_CANCELACION_PENDIENTE_KEY = "cancelacion_reserva_pendiente"
 
 
-def _es_media_comprobante(msg: MensajeWhapi) -> bool:
-    return bool(msg.media_url and msg.tipo in _TIPOS_COMPROBANTE_MEDIA)
+def _texto_simple_confirmacion(valor: str | None) -> str:
+    texto = (valor or "").casefold()
+    texto = texto.translate(str.maketrans("áéíóúüñ", "aeiouun"))
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    return " ".join(texto.split())
 
 
-def _texto_menciona_comprobante(texto: str | None) -> bool:
-    return bool(_RE_COMPROBANTE_EXPLICITO.search(texto or ""))
+def _respuesta_confirmacion_cancelacion(valor: str | None) -> str | None:
+    texto = _texto_simple_confirmacion(valor)
+    if not texto:
+        return None
+    if texto in {
+        "si", "s", "si claro", "claro", "dale", "ok", "okay", "confirmo",
+        "confirmar", "confirmala", "cancelala", "cancela", "cancelar",
+        "si cancela", "si cancelar", "si cancelala", "si confirmo",
+    }:
+        return "si"
+    if texto in {
+        "no", "nop", "no gracias", "dejala", "dejela", "dejalo asi",
+        "dejarla", "mantener", "mantenla", "no cancelar", "no la canceles",
+        "no canceles", "mejor no",
+    }:
+        return "no"
+    return None
 
 
-def _esperaba_comprobante_pago(historial_db: list) -> bool:
-    """Detecta si el bot/equipo acababa de pedir un comprobante de pago."""
-    ultimo_outbound = next(
-        (
-            getattr(h, "contenido", "") or ""
-            for h in reversed(historial_db)
-            if getattr(h, "direccion", None) in ("outbound", "humano")
-            and getattr(h, "contenido", None)
-        ),
-        "",
+def _cancelacion_pendiente_vigente(pendiente: dict | None) -> dict | None:
+    if not isinstance(pendiente, dict):
+        return None
+    raw = pendiente.get("creada_en")
+    try:
+        creada = datetime.fromisoformat(str(raw))
+    except Exception:
+        return None
+    if creada.tzinfo is None:
+        creada = creada.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) - creada > timedelta(minutes=30):
+        return None
+    if not pendiente.get("reserva_id"):
+        return None
+    return pendiente
+
+
+async def _metadata_cliente(session: AsyncSession, cliente_id: int) -> dict:
+    row = (await session.execute(
+        select(Cliente.metadata_).where(Cliente.id == cliente_id)
+    )).first()
+    return dict((row[0] if row else None) or {})
+
+
+async def _guardar_metadata_cliente(session: AsyncSession, cliente_id: int, metadata: dict) -> None:
+    await session.execute(
+        update(Cliente)
+        .where(Cliente.id == cliente_id)
+        .values(metadata_=metadata)
     )
-    if not ultimo_outbound:
-        return False
-    texto = ultimo_outbound.lower()
-    pide_comprobante = re.search(
-        r"\b(comprobante|soporte|recibo|pantallazo|captura)\b", texto
-    )
-    contexto_pago = re.search(
-        r"\b(pago|pagues|pagar|cover|transferencia|nequi|daviplata|reserva)\b",
-        texto,
-    )
-    return bool(pide_comprobante and contexto_pago)
 
 
-def _contenido_real_cliente(msg: MensajeWhapi, contenido_usuario: str) -> str:
-    """Devuelve texto/caption real, ignorando placeholders internos del flujo."""
-    texto = (msg.texto or "").strip()
-    if texto:
-        return texto
-    contenido = (contenido_usuario or "").strip()
-    if contenido.startswith("[El cliente envió "):
-        return ""
-    return contenido
-
-
-def _debe_auto_encolar_comprobante(
+async def _resolver_cancelacion_pendiente(
     *,
-    msg: MensajeWhapi,
-    intent: str,
+    session: AsyncSession,
+    cliente_id: int,
+    cliente_numero: str,
     contenido_usuario: str,
-    historial_db: list,
 ) -> bool:
-    """Evita que cualquier imagen sin texto termine en el grupo como comprobante.
-
-    El clasificador puede confundirse con memes, saludos o capturas genéricas.
-    Solo auto-notificamos media como comprobante si hay una señal explícita o si
-    el bot acababa de pedir/esperar ese comprobante.
-    """
-    if not _es_media_comprobante(msg):
+    metadata = await _metadata_cliente(session, cliente_id)
+    pendiente = _cancelacion_pendiente_vigente(metadata.get(_CANCELACION_PENDIENTE_KEY))
+    if not pendiente:
+        if _CANCELACION_PENDIENTE_KEY in metadata:
+            metadata.pop(_CANCELACION_PENDIENTE_KEY, None)
+            await _guardar_metadata_cliente(session, cliente_id, metadata)
         return False
-    texto_real = _contenido_real_cliente(msg, contenido_usuario)
-    if _texto_menciona_comprobante(texto_real):
+
+    decision = _respuesta_confirmacion_cancelacion(contenido_usuario)
+    reserva_id = pendiente.get("reserva_id")
+    mesa = pendiente.get("mesa_numero")
+    fecha = pendiente.get("fecha")
+    if decision is None:
+        texto = (
+            "Antes de seguir, necesito confirmar esto: "
+            f"¿estás seguro de que quieres cancelar tu reserva"
+            f"{f' de la mesa {mesa}' if mesa else ''}"
+            f"{f' para el {fecha}' if fecha else ''}? Responde *Sí* o *No*."
+        )
+        await enviar_texto(cliente_numero, texto)
+        await guardar_conversacion(
+            session, cliente_id=cliente_id, direccion="outbound", tipo="texto",
+            contenido=texto, intent="cancelar_reserva",
+            metadata={"cancelacion_reserva_pendiente": True},
+        )
+        log.info("flow.cancelacion_pendiente.repregunta", cliente=cliente_numero, reserva_id=reserva_id)
         return True
-    if _esperaba_confirmacion_reserva(historial_db) or _esperaba_comprobante_pago(historial_db):
+
+    metadata.pop(_CANCELACION_PENDIENTE_KEY, None)
+    await _guardar_metadata_cliente(session, cliente_id, metadata)
+
+    if decision == "no":
+        texto = "Perfecto, mantengo tu reserva activa. No cancelé nada. ✅"
+        await enviar_texto(cliente_numero, texto)
+        await guardar_conversacion(
+            session, cliente_id=cliente_id, direccion="outbound", tipo="texto",
+            contenido=texto, intent="cancelar_reserva",
+            metadata={"cancelacion_reserva_confirmada": False, "reserva_id": reserva_id},
+        )
+        log.info("flow.cancelacion_pendiente.rechazada", cliente=cliente_numero, reserva_id=reserva_id)
         return True
+
+    tipo = pendiente.get("tipo_reserva")
+    try:
+        if tipo == "sala":
+            res = await cantina_api.cancelar_reserva_sala(reserva_id)
+        elif pendiente.get("grupo_id"):
+            res = await cantina_api.cancelar_grupo(pendiente["grupo_id"])
+        else:
+            res = await cantina_api.cancelar_reserva(reserva_id)
+    except Exception as e:
+        res = {"ok": False, "error": str(e)}
+
+    if isinstance(res, dict) and res.get("ok", True):
+        texto = "Listo ✅ cancelé tu reserva."
+        if fecha:
+            texto += f" Fecha: {fecha}."
+        if mesa:
+            texto += f" Mesa: {mesa}."
+    else:
+        texto = (
+            "Intenté cancelar tu reserva, pero hubo un problema técnico. "
+            "Ya lo estoy revisando para que no quede en el aire."
+        )
+        log.warning(
+            "flow.cancelacion_pendiente.fail",
+            cliente=cliente_numero,
+            reserva_id=reserva_id,
+            error=(res or {}).get("error") if isinstance(res, dict) else str(res),
+        )
+
+    await enviar_texto(cliente_numero, texto)
+    await guardar_conversacion(
+        session, cliente_id=cliente_id, direccion="outbound", tipo="texto",
+        contenido=texto, intent="cancelar_reserva",
+        metadata={
+            "cancelacion_reserva_confirmada": True,
+            "reserva_id": reserva_id,
+            "resultado": res,
+        },
+    )
+    log.info("flow.cancelacion_pendiente.ejecutada", cliente=cliente_numero, reserva_id=reserva_id)
+    return True
+
+
+def _normalizar_texto_corto(texto: str | None) -> str:
+    t = (texto or "").strip().lower()
+    t = t.translate(str.maketrans("áéíóúüñ", "aeiouun"))
+    t = re.sub(r"[^\w\s]+", " ", t)
+    return " ".join(t.split())
+
+
+def _es_cierre_simple_sin_equipo(texto: str | None) -> bool:
+    """Mensajes amables/logisticos cortos no requieren alerta humana."""
+    t = _normalizar_texto_corto(texto)
+    if not t or len(t) > 80:
+        return False
+
+    cierres_exactos = {
+        "gracias",
+        "muchas gracias",
+        "ok",
+        "oka",
+        "okay",
+        "dale",
+        "listo",
+        "perfecto",
+        "super",
+        "bueno",
+        "entiendo",
+        "entendido",
+        "confirmado",
+        "de acuerdo",
+        "esta bien",
+        "vale",
+        "genial",
+    }
+    if t in cierres_exactos:
+        return True
+
+    if re.fullmatch(
+        r"(si\s+)?(?:ya\s+)?(?:vamos|voy|vengo|salimos|llegamos)(?:\s+para|\s+pa|\s+a)?\s+(?:alla|la cantina|el sitio)",
+        t,
+    ):
+        return True
+    if re.fullmatch(r"(?:si\s+)?(?:ya\s+)?(?:vamos|voy|vengo|salimos|llegamos).{0,35}(?:gracias|listo|dale)", t):
+        return True
+    if re.fullmatch(r"(?:gracias|listo|dale|ok|perfecto).{0,35}", t):
+        return True
+
     return False
 
 
-def _esperaba_confirmacion_reserva(historial_db: list) -> bool:
-    """Detecta si el último outbound del bot pedía confirmar una reserva pendiente."""
-    ultimo_outbound = next(
-        (
-            getattr(h, "contenido", "") or ""
-            for h in reversed(historial_db)
-            if getattr(h, "direccion", None) in ("outbound", "humano")
-            and getattr(h, "contenido", None)
-        ),
-        "",
-    )
-    if not ultimo_outbound:
+def _es_pedido_info_general_sin_equipo(texto: str | None) -> bool:
+    """Leads normales pidiendo informacion no requieren alerta humana."""
+    t = _normalizar_texto_corto(texto)
+    if not t or len(t) > 120:
         return False
-    texto = ultimo_outbound.lower()
-    if not re.search(r"\bconfirm(?:amos|ar|as|o|e|en)\b", texto):
-        return False
-    return bool(re.search(r"\bmesa|reserva|personas|a nombre de\b", texto))
+    if re.search(
+        r"\b(?:mas|m[aá]s)\s+informacion\b|\binformacion\b|\binfo\b",
+        t,
+    ):
+        return True
+    if re.fullmatch(
+        r"(?:hola|buenas|buenas noches|buenas tardes|buenos dias)?\s*"
+        r"(?:quiero|quisiera|dame|me das|me regalas|necesito|puedes darme)\s+"
+        r"(?:info|informacion|mas informacion).{0,30}",
+        t,
+    ):
+        return True
+    return False
 
 
 def _pide_plano_espacio(texto: str) -> bool:
@@ -201,6 +328,89 @@ def _normalizar_intent_por_reglas(
     return intent
 
 
+
+_RE_COMPROBANTE_EXPLICITO = re.compile(
+    r"\b("
+    r"comprobante|soporte|recibo|captura|pantallazo|transfer(?:encia)?|"
+    r"nequi|daviplata|bancolombia|consignaci[oó]n|pag(?:o|ue|ué|ado|ada)|cover"
+    r")\b",
+    re.IGNORECASE,
+)
+_TIPOS_COMPROBANTE_MEDIA = {"imagen", "pdf", "documento"}
+
+
+def _es_media_comprobante(msg: MensajeWhapi) -> bool:
+    return bool(msg.media_url and msg.tipo in _TIPOS_COMPROBANTE_MEDIA)
+
+
+def _texto_menciona_comprobante(texto: str | None) -> bool:
+    return bool(_RE_COMPROBANTE_EXPLICITO.search(texto or ""))
+
+
+def _ultimo_outbound_texto(historial_db: list) -> str:
+    return next(
+        (
+            getattr(h, "contenido", "") or ""
+            for h in reversed(historial_db)
+            if getattr(h, "direccion", None) in ("outbound", "humano")
+            and getattr(h, "contenido", None)
+        ),
+        "",
+    )
+
+
+def _esperaba_confirmacion_reserva(historial_db: list) -> bool:
+    ultimo_outbound = _ultimo_outbound_texto(historial_db)
+    if not ultimo_outbound:
+        return False
+    texto = ultimo_outbound.lower()
+    if not re.search(r"\bconfirm(?:amos|ar|as|o|e|en)\b", texto):
+        return False
+    return bool(re.search(r"\bmesa|reserva|personas|a nombre de\b", texto))
+
+
+def _esperaba_comprobante_pago(historial_db: list) -> bool:
+    ultimo_outbound = _ultimo_outbound_texto(historial_db)
+    if not ultimo_outbound:
+        return False
+    texto = ultimo_outbound.lower()
+    pide_comprobante = re.search(
+        r"\b(comprobante|soporte|recibo|pantallazo|captura)\b", texto
+    )
+    contexto_pago = re.search(
+        r"\b(pago|pagues|pagar|cover|transferencia|nequi|daviplata|reserva)\b",
+        texto,
+    )
+    return bool(pide_comprobante and contexto_pago)
+
+
+def _contenido_real_cliente(msg: MensajeWhapi, contenido_usuario: str) -> str:
+    texto = (msg.texto or "").strip()
+    if texto:
+        return texto
+    contenido = (contenido_usuario or "").strip()
+    if contenido.startswith("[El cliente envió "):
+        return ""
+    return contenido
+
+
+def _debe_auto_encolar_comprobante(
+    *,
+    msg: MensajeWhapi,
+    intent: str,
+    contenido_usuario: str,
+    historial_db: list,
+) -> bool:
+    if not _es_media_comprobante(msg):
+        return False
+    texto_real = _contenido_real_cliente(msg, contenido_usuario)
+    if _texto_menciona_comprobante(texto_real):
+        return True
+    if _esperaba_confirmacion_reserva(historial_db) or _esperaba_comprobante_pago(historial_db):
+        return True
+    return False
+
+
 def _asegurar_escalacion_humana(
     outbox: list[dict],
     *,
@@ -212,6 +422,10 @@ def _asegurar_escalacion_humana(
 ) -> bool:
     """Encola el aviso si Claude omitio la tool en un caso humano obligatorio."""
     if intent not in _INTENTS_ESCALACION_OBLIGATORIA:
+        return False
+    if _es_cierre_simple_sin_equipo(mensaje_cliente):
+        return False
+    if _es_pedido_info_general_sin_equipo(mensaje_cliente):
         return False
     if any(item.get("clase") == "escalacion" for item in outbox):
         return False
@@ -255,6 +469,8 @@ def _nombre_marcado_en_texto(texto: str | None) -> str | None:
 
 
 def _pregunta_nombre_reserva(texto: str | None) -> bool:
+    if re.search(r"a nombre de qui[eé]n aparto la mesa", texto or "", flags=re.IGNORECASE):
+        return True
     return bool(re.search(
         r"a nombre de qui[eé]n|qu[eé] nombre (?:pongo|coloco)|"
         r"nombre para la reserva|c[oó]mo quieres que quede (?:el nombre|la reserva)|"
@@ -262,6 +478,15 @@ def _pregunta_nombre_reserva(texto: str | None) -> bool:
         texto or "",
         flags=re.IGNORECASE,
     ))
+
+
+def _contenido_outbound_relevante_nombre(texto: str | None) -> bool:
+    contenido = (texto or "").strip()
+    if not contenido:
+        return False
+    if re.fullmatch(r"\[[^\]]{0,80}\]", contenido):
+        return False
+    return True
 
 
 def _cierra_contexto_reserva(texto: str | None) -> bool:
@@ -289,6 +514,7 @@ def _nombre_reserva_explicito(mensaje_actual: str, historial_db: list) -> str | 
             h for h in reversed(historial_db)
             if getattr(h, "direccion", None) in ("outbound", "humano")
             and getattr(h, "contenido", None)
+            and _contenido_outbound_relevante_nombre(getattr(h, "contenido", None))
         ),
         None,
     )
@@ -322,6 +548,7 @@ def _nombre_reserva_explicito(mensaje_actual: str, historial_db: list) -> str | 
                 for j in range(indice - 1, -1, -1)
                 if getattr(historial[j], "direccion", None) in ("outbound", "humano")
                 and getattr(historial[j], "contenido", None)
+                and _contenido_outbound_relevante_nombre(getattr(historial[j], "contenido", None))
             ),
             None,
         )
@@ -545,12 +772,6 @@ async def procesar_mensaje_inbound(
     if not contenido_usuario.strip():
         if msg.tipo == "imagen" and msg.media_url:
             contenido_usuario = "[El cliente envió una imagen sin texto.]"
-        elif msg.tipo in {"pdf", "documento"} and msg.media_url:
-            contenido_usuario = (
-                "[El cliente envió un archivo PDF/documento sin texto. "
-                "Si el contexto reciente habla de pago, cover o reserva, trátalo como: "
-                "'sí, confirmo la reserva y envío el comprobante de pago'.]"
-            )
         else:
             log.info("flow.inbound_sin_texto", cliente=cliente_numero, tipo=msg.tipo)
             return []
@@ -572,6 +793,14 @@ async def procesar_mensaje_inbound(
                 f"Su respuesta: {contenido_usuario}"
             )
 
+    if await _resolver_cancelacion_pendiente(
+        session=session,
+        cliente_id=cliente_id,
+        cliente_numero=cliente_numero,
+        contenido_usuario=contenido_usuario,
+    ):
+        return []
+
     solicitud_menu = pide_menu(msg.texto or contenido_usuario)
     solicitud_plano = _pide_plano_espacio(msg.texto or contenido_usuario)
     if solicitud_plano:
@@ -580,9 +809,8 @@ async def procesar_mensaje_inbound(
 
     # 1. Historial (hasta 30 msgs / 48h)
     historial_db = await ultimos_mensajes(session, cliente_id, n=30, horas_max=48)
-    comprobante_confirma_reserva = _es_media_comprobante(msg) and _esperaba_confirmacion_reserva(historial_db)
     comprobante_contextual = _es_media_comprobante(msg) and (
-        comprobante_confirma_reserva
+        _esperaba_confirmacion_reserva(historial_db)
         or _esperaba_comprobante_pago(historial_db)
         or _texto_menciona_comprobante(_contenido_real_cliente(msg, contenido_usuario))
     )
@@ -625,6 +853,7 @@ async def procesar_mensaje_inbound(
         intent = "envia_comprobante_pago"
         log.info("flow.intent_pdf_comprobante", cliente=cliente_numero)
 
+
     if intent == "pide_estado":
         from app import promo_estado as _pe
         if _pe.cargar_estado() is not None:
@@ -660,19 +889,17 @@ async def procesar_mensaje_inbound(
         contenido_usuario=contenido_usuario,
         historial_db=historial_db,
     ):
-        es_pdf = msg.tipo in {"pdf", "documento"}
         outbox.append({
             "tipo": "comprobante_cover",
             "mensaje": (
                 "💸 *Comprobante de pago recibido*\n"
                 f"Cliente: {cliente_numero}\n\n"
-                f"Verifica el {'PDF/documento' if es_pdf else 'comprobante'}. "
-                "Para aprobar el pago y avisarle al cliente, "
+                "Verifica la imagen. Para aprobar el pago y avisarle al cliente, "
                 "menciona a Nicky e indica el cliente o la reserva."
             ),
             "media_url": msg.media_url,
-            "media_bytes": None if es_pdf else imagen_bytes,
-            "media_mime": imagen_mime or msg.media_mime or ("application/pdf" if es_pdf else "image/jpeg"),
+            "media_bytes": imagen_bytes,
+            "media_mime": imagen_mime or msg.media_mime or "image/jpeg",
             "cliente_numero": cliente_numero,
             "whapi_message_id": msg.id,
         })
@@ -686,6 +913,8 @@ async def procesar_mensaje_inbound(
         "session": session,
         "cliente_id": cliente_id,
         "cliente_numero": cliente_numero,
+        "cliente_phone_hint": msg.phone_hint,
+        "cliente_lid": msg.lid,
         "intent": intent,
         "outbox": outbox,
         "mensaje_actual_cliente": contenido_usuario,
@@ -703,23 +932,8 @@ async def procesar_mensaje_inbound(
         "incoming_media_tipo": msg.tipo,
         "nombre_reserva_confirmado": nombre_reserva_confirmado,
         "enviar_carta_link": solicitud_menu,
-        "comprobante_confirma_reserva": comprobante_confirma_reserva,
     }
     extra_system = await _construir_contexto_cliente(session, cliente_id, cliente_numero)
-    if comprobante_confirma_reserva:
-        extra_system += (
-            "\n\n## COMPROBANTE COMO CONFIRMACIÓN DE RESERVA\n"
-            "El cliente acaba de enviar un comprobante (imagen/PDF/documento) justo después "
-            "de que le pediste confirmar una reserva pendiente. Interpreta ese adjunto como: "
-            "\"sí, confirmo la reserva y envío el comprobante de pago\".\n"
-            "- Si en el historial ya están fecha, mesa(s) o sala, personas, teléfono y nombre, "
-            "NO preguntes de nuevo si confirma: crea la reserva con esos datos.\n"
-            "- Si la reserva creada tiene cover pendiente/anticipado o el cliente pagó cover, "
-            "después de crearla llama `registrar_comprobante_cover` con el ID de la reserva "
-            "para dejarla marcada como anticipada pendiente de verificación humana.\n"
-            "- Si falta un dato obligatorio, pregunta únicamente ese dato faltante y conserva "
-            "el comprobante como recibido; no reinicies el flujo."
-        )
     if solicitud_menu:
         extra_system += (
             "\n\n## SOLICITUD DE MENÚ DETECTADA\n"

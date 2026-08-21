@@ -125,6 +125,55 @@ def _historial_para_contexto(rows: list[Conversacion]) -> str:
     return "\n".join(lineas)
 
 
+def _telefono_canonico_equipo(raw: str) -> str:
+    value = (raw or "").strip().replace(" ", "")
+    if value.endswith("@lid"):
+        return value
+    digitos = re.sub(r"\D+", "", raw or "")
+    if not digitos:
+        return ""
+    if digitos.startswith("00"):
+        digitos = digitos[2:]
+    if digitos.startswith("57") and len(digitos) >= 12:
+        return "+" + digitos[:12]
+    if len(digitos) == 10:
+        return "+57" + digitos
+    return "+" + digitos
+
+
+def _cliente_objetivo_desde_alerta_citada(texto: str) -> dict | None:
+    """Extrae el cliente correcto de una alerta del bot citada por el equipo."""
+    if not texto or "Cliente:" not in texto:
+        return None
+    match_tel = re.search(
+        r"Cliente:\s*((?:\d{8,}@lid)|(?:\+?\d[\d\s().-]{7,}))",
+        texto,
+        flags=re.I,
+    )
+    if not match_tel:
+        return None
+    telefono = _telefono_canonico_equipo(match_tel.group(1))
+    if not telefono:
+        return None
+
+    consulta = ""
+    match_consulta = re.search(
+        r"Consulta:\s*(.*?)(?:\n\s*Su respuesta:|\Z)",
+        texto,
+        flags=re.S | re.I,
+    )
+    if match_consulta:
+        consulta = " ".join(match_consulta.group(1).split()).strip()
+    match_respuesta = re.search(r"Su respuesta:\s*(.*)", texto, flags=re.S | re.I)
+    respuesta = " ".join(match_respuesta.group(1).split()).strip() if match_respuesta else ""
+
+    return {
+        "telefono": telefono,
+        "consulta": consulta[:500],
+        "respuesta_cliente": respuesta[:300],
+    }
+
+
 def _pide_estados_publicados(texto: str) -> bool:
     """Detecta pedidos de estados ya publicados, no la cola de programados."""
     t = (texto or "").strip().lower()
@@ -513,6 +562,7 @@ async def procesar_mensaje_equipo(
     if not instruccion:
         instruccion = "[Imagen sin texto; analízala y dime qué necesitas saber o qué acción quieres que tome.]"
     instruccion_usuario = instruccion
+    cliente_objetivo_citado = None
 
     # Si el equipo cita un mensaje (típicamente un mensaje del bot/cliente),
     # inyectarlo al contexto: "Fabio citó X, su respuesta es Y"
@@ -532,9 +582,21 @@ async def procesar_mensaje_equipo(
                 quoted_id=msg.quoted_message_id,
                 preview=quoted_preview[:80],
             )
+            cliente_objetivo_citado = _cliente_objetivo_desde_alerta_citada(quoted_preview)
+            bloque_objetivo = ""
+            if cliente_objetivo_citado:
+                bloque_objetivo = (
+                    "\n\n[OBJETIVO_OPERATIVO_DE_LA_CITA]\n"
+                    "Este mensaje del equipo responde a una alerta del bot. "
+                    "Si usas avisar_cliente, usa EXCLUSIVAMENTE este cliente; "
+                    "no tomes telefonos ni nombres del historial reciente.\n"
+                    f"telefono_cliente_objetivo: {cliente_objetivo_citado['telefono']}\n"
+                    f"consulta_cliente: {cliente_objetivo_citado.get('consulta') or '(sin consulta)'}\n"
+                    f"respuesta_cliente: {cliente_objetivo_citado.get('respuesta_cliente') or '(sin respuesta)'}"
+                )
             instruccion = (
                 f"[Te están respondiendo/citando este mensaje anterior:\n"
-                f"\"{quoted_preview[:600]}\"]\n\n"
+                f"\"{quoted_preview[:600]}\"]{bloque_objetivo}\n\n"
                 f"Su instrucción: {instruccion}"
             )
 
@@ -789,6 +851,7 @@ async def procesar_mensaje_equipo(
         # Chat al que se responde (grupo o personal) — lo usa enviar_plano_espacio
         # para mandar la foto al mismo chat.
         "destino_envio": destino_envio,
+        "cliente_objetivo_citado": cliente_objetivo_citado,
         # Imagen adjunta (si la hay) — la usa crear_evento/guardar_flyer_evento
         # para guardar el flyer cuando Fabio manda "crea este evento con su flyer".
         "imagen_bytes": imagen_bytes,

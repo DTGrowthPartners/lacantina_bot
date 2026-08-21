@@ -235,7 +235,10 @@ class ComprobanteFlowTests(unittest.IsolatedAsyncioTestCase):
         }
         detalle = {
             "ok": True,
-            "reserva": {"telefono": "+573001112233"},
+            "reserva": {
+                "telefono": "+573001112233",
+                "nombre_cliente": "Carlos Mario Giraldo",
+            },
         }
 
         with (
@@ -260,3 +263,5 @@ class ComprobanteFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(outbox), 1)
         self.assertEqual(outbox[0]["reserva_id"], 78)
         self.assertIn("reserva #78", outbox[0]["mensaje"])
+        self.assertIn("A nombre de: Carlos Mario Giraldo", outbox[0]["mensaje"])
+        self.assertIn("Teléfono: +573001112233", outbox[0]["mensaje"])

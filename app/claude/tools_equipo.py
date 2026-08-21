@@ -30,6 +30,29 @@ _HORA_APERTURA_LUN_JUE = "18:00"
 _HORA_APERTURA_VIE_DOM = "17:00"
 
 
+def _telefono_canonico(raw: str) -> str:
+    value = (raw or "").strip().replace(" ", "")
+    if value.endswith("@lid"):
+        return value
+    digitos = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if not digitos:
+        return ""
+    if digitos.startswith("00"):
+        digitos = digitos[2:]
+    if digitos.startswith("57") and len(digitos) >= 12:
+        return "+" + digitos[:12]
+    if len(digitos) == 10:
+        return "+57" + digitos
+    return "+" + digitos
+
+
+def _ultimos_10(raw: str) -> str:
+    if (raw or "").strip().endswith("@lid"):
+        return (raw or "").strip()
+    digitos = "".join(ch for ch in (raw or "") if ch.isdigit())
+    return digitos[-10:]
+
+
 def _schema_evento_desde_estado() -> dict:
     return {
         "evento_fecha": {
@@ -387,8 +410,8 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "promo', etc. Requiere que el equipo haya adjuntado una imagen o video en "
             "el mensaje. Si incluyen un texto para acompañar la promo, pásalo en `caption`. "
             "Si la imagen es un flyer de evento, extrae fecha/nombre/hora/cover del flyer "
-            "y pasa los campos `evento_*`: la tool creará o actualizará el evento y guardará "
-            "el flyer sin duplicar si ya existe esa fecha/hora."
+            "y pasa los campos `evento_*`: si ya existe un evento compatible en esa fecha "
+            "NO se crea otro; solo se guarda el flyer. Si no existe, la tool crea el evento."
         ),
         "input_schema": {
             "type": "object",
@@ -407,7 +430,8 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "debe ser YYYY-MM-DD y la hora debe conservar formato de 12 horas con AM/PM. "
             "Requiere imagen o video adjunto en el mismo mensaje. Si la imagen es un flyer "
             "de evento, extrae fecha/nombre/hora/cover del flyer y pasa los campos `evento_*`; "
-            "la tool creará o actualizará el evento de inmediato y guardará el flyer."
+            "si ya existe un evento compatible no crea otro, solo guarda el flyer. Si no existe, "
+            "la tool crea el evento de inmediato."
         ),
         "input_schema": {
             "type": "object",
@@ -714,11 +738,48 @@ def _bool_cover(raw: object, valor_cover: int) -> bool:
     return valor_cover > 0
 
 
+def _normalizar_texto_evento(valor: object) -> str:
+    texto = str(valor or "").casefold().strip()
+    texto = texto.translate(str.maketrans("áéíóúüñ", "aeiouun"))
+    return " ".join(texto.split())
+
+
+def _evento_existente_para_estado(
+    existentes: list[dict],
+    *,
+    nombre: str,
+    hora_inicio: str,
+    hora_explicitada: bool,
+) -> dict | None:
+    if not existentes:
+        return None
+
+    if hora_explicitada:
+        for evento in existentes:
+            if str(evento.get("hora_inicio") or "") == hora_inicio:
+                return evento
+        return None
+
+    nombre_norm = _normalizar_texto_evento(nombre)
+    if nombre_norm:
+        for evento in existentes:
+            existente_norm = _normalizar_texto_evento(
+                evento.get("nombre") or evento.get("evento")
+            )
+            if existente_norm and existente_norm == nombre_norm:
+                return evento
+
+    if len(existentes) == 1:
+        return existentes[0]
+
+    return None
+
+
 async def _sincronizar_evento_desde_estado(args: dict, ctx: dict, *, media_bytes: bytes | None, media_mime: str | None) -> dict | None:
     """Crea/actualiza el evento asociado a un flyer publicado como estado.
 
-    Es idempotente por (fecha, hora_inicio): reenviar el mismo flyer vuelve a
-    tocar esa franja, no crea un evento adicional.
+    Es idempotente: si ya existe un evento compatible para la fecha/hora, no
+    vuelve a crearlo; solo guarda el flyer/descripción local.
     """
     if not media_bytes:
         return None
@@ -726,7 +787,8 @@ async def _sincronizar_evento_desde_estado(args: dict, ctx: dict, *, media_bytes
     nombre = str(args.get("evento_nombre") or "").strip()
     if not (fecha and nombre):
         return None
-    hora_inicio = _normalizar_hora_inicio_evento(fecha, args.get("evento_hora_inicio"))
+    hora_raw = str(args.get("evento_hora_inicio") or "").strip()
+    hora_inicio = _normalizar_hora_inicio_evento(fecha, hora_raw)
     if not hora_inicio:
         return {
             "ok": False,
@@ -751,7 +813,39 @@ async def _sincronizar_evento_desde_estado(args: dict, ctx: dict, *, media_bytes
     consulta = await cantina_api.consultar_evento(fecha)
     if isinstance(consulta, dict) and consulta.get("ok"):
         existentes = extraer_eventos(consulta)
-    ya_existia = any(str(e.get("hora_inicio") or "") == hora_inicio for e in existentes)
+    evento_existente = _evento_existente_para_estado(
+        existentes,
+        nombre=nombre,
+        hora_inicio=hora_inicio,
+        hora_explicitada=bool(hora_raw),
+    )
+    if evento_existente:
+        hora_existente = str(evento_existente.get("hora_inicio") or "") or None
+        path_flyer = guardar_flyer(fecha, hora_existente, media_bytes, media_mime)
+        guardar_descripcion(fecha, hora_existente, descripcion)
+        res = {
+            "ok": True,
+            "evento": evento_existente,
+            "evento_desde_estado": {
+                "ok": True,
+                "fecha": fecha,
+                "hora_inicio": hora_existente,
+                "nombre": evento_existente.get("nombre") or nombre,
+                "creado": False,
+                "actualizado": False,
+                "omitido_por_existente": True,
+                "flyer_guardado": bool(path_flyer),
+                "hora_asumida": not bool(hora_raw),
+            },
+        }
+        log.info(
+            "tools_equipo.estado.evento_sync_omitido",
+            fecha=fecha,
+            hora=hora_existente,
+            flyer=bool(path_flyer),
+            por=ctx.get("miembro_nombre"),
+        )
+        return res
 
     res = await cantina_api.crear_evento(payload)
     if isinstance(res, dict) and res.get("ok"):
@@ -762,16 +856,17 @@ async def _sincronizar_evento_desde_estado(args: dict, ctx: dict, *, media_bytes
             "fecha": fecha,
             "hora_inicio": hora_inicio,
             "nombre": nombre,
-            "creado": not ya_existia,
-            "actualizado": ya_existia,
+            "creado": True,
+            "actualizado": False,
+            "omitido_por_existente": False,
             "flyer_guardado": bool(path_flyer),
-            "hora_asumida": not bool(str(args.get("evento_hora_inicio") or "").strip()),
+            "hora_asumida": not bool(hora_raw),
         }
         log.info(
             "tools_equipo.estado.evento_sync",
             fecha=fecha,
             hora=hora_inicio,
-            creado=not ya_existia,
+            creado=True,
             flyer=bool(path_flyer),
             por=ctx.get("miembro_nombre"),
         )
@@ -821,7 +916,20 @@ async def handler_avisar_cliente(args: dict, ctx: dict) -> dict:
     mensaje = (args.get("mensaje") or "").strip()
     if not tel or not mensaje:
         return {"ok": False, "error": "telefono y mensaje son requeridos"}
-    numero = tel if tel.startswith("+") else "+" + tel.lstrip("+")
+    numero = _telefono_canonico(tel)
+    objetivo_citado = ctx.get("cliente_objetivo_citado") or {}
+    tel_objetivo = _telefono_canonico(objetivo_citado.get("telefono") or "")
+    if tel_objetivo:
+        if numero and _ultimos_10(numero) != _ultimos_10(tel_objetivo):
+            log.warning(
+                "tools_equipo.avisar_cliente.override_objetivo_citado",
+                solicitado=numero,
+                objetivo=tel_objetivo,
+                por=ctx.get("miembro_nombre"),
+            )
+        numero = tel_objetivo
+    if not numero:
+        return {"ok": False, "error": "telefono invalido"}
     from app.whapi.client import enviar_texto
     try:
         await enviar_texto(numero, mensaje)
@@ -984,12 +1092,17 @@ async def handler_publicar_estado(args: dict, ctx: dict) -> dict:
     if isinstance(evento_sync, dict):
         ev = evento_sync.get("evento_desde_estado") if evento_sync.get("ok") else None
         if ev:
-            accion = "creé" if ev.get("creado") else "actualicé"
             extra = " (hora normal asumida)" if ev.get("hora_asumida") else ""
-            nota += (
-                f" Además, {accion} el evento del {ev['fecha']} a las "
-                f"{ev['hora_inicio']}{extra} y guardé el flyer."
-            )
+            if ev.get("omitido_por_existente"):
+                nota += (
+                    f" El evento del {ev['fecha']} a las {ev['hora_inicio']}{extra} "
+                    "ya existía, no lo dupliqué; solo guardé el flyer."
+                )
+            else:
+                nota += (
+                    f" Además, creé el evento del {ev['fecha']} a las "
+                    f"{ev['hora_inicio']}{extra} y guardé el flyer."
+                )
         elif not evento_sync.get("ok"):
             nota += f" No pude crear el evento automático: {evento_sync.get('error') or 'error del backend'}."
     elif not video_bytes and (args.get("evento_fecha") or args.get("evento_nombre")):
@@ -1065,7 +1178,7 @@ async def handler_programar_estado(args: dict, ctx: dict) -> dict:
         "nota": (
             "Confirma brevemente el ID, la fecha y la hora Colombia. "
             "Si evento_sync trae evento_desde_estado, menciona tambien si el evento "
-            "quedo creado o actualizado."
+            "quedo creado o si ya existia y solo se guardo el flyer."
         ),
     }
 
@@ -1174,11 +1287,11 @@ async def handler_borrar_ultimo_estado(args: dict, ctx: dict) -> dict:
 
 
 async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
-    """Recupera el último archivo que mandó un cliente (su comprobante) y lo
+    """Recupera la última imagen que mandó un cliente (su comprobante) y la
     reenvía al chat actual (el grupo del equipo)."""
-    from app.db.repos import ultimo_comprobante_inbound
+    from app.db.repos import ultima_imagen_inbound
     from app.whapi.parser import normalizar_numero
-    from app.whapi.client import auth_headers, enviar_documento_bytes, enviar_imagen_bytes
+    from app.whapi.client import auth_headers, enviar_imagen_bytes
 
     tel = normalizar_numero((args.get("telefono") or "").strip())
     if not tel:
@@ -1190,10 +1303,10 @@ async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
     if session is None:
         return {"ok": False, "error": "sin sesión de BD"}
 
-    conv = await ultimo_comprobante_inbound(session, tel)
+    conv = await ultima_imagen_inbound(session, tel)
     if not conv or not conv.media_url:
         return {"ok": False, "error": (
-            f"No encuentro ningún comprobante reciente enviado por {tel}. "
+            f"No encuentro ninguna imagen reciente enviada por {tel}. "
             "Verifica el número o pídele al cliente que reenvíe el comprobante."
         )}
 
@@ -1204,26 +1317,15 @@ async def handler_reenviar_comprobante_cliente(args: dict, ctx: dict) -> dict:
         if r.status_code >= 400 or not r.content:
             log.warning("tools_equipo.reenviar_comprobante.download_http",
                         status=r.status_code, tel=tel)
-            return {"ok": False, "error": "no pude descargar el comprobante del cliente (link expirado)"}
-        header_mime = (r.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
-        stored_mime = (conv.media_mime or "").split(";", 1)[0].strip()
-        mime = stored_mime if header_mime in {"", "application/octet-stream"} else header_mime
-        mime = mime or "application/octet-stream"
-        caption = f"📎 Comprobante de {tel} (reenviado al grupo)"
-        if mime.lower().startswith("image/"):
-            await enviar_imagen_bytes(destino, r.content, mime=mime, caption=caption)
-        else:
-            filename = "comprobante.pdf" if mime.lower() == "application/pdf" else "comprobante"
-            await enviar_documento_bytes(
-                destino,
-                r.content,
-                mime=mime,
-                filename=filename,
-                caption=caption,
-            )
+            return {"ok": False, "error": "no pude descargar la imagen del cliente (link expirado)"}
+        mime = r.headers.get("content-type") or "image/jpeg"
+        await enviar_imagen_bytes(
+            destino, r.content, mime=mime,
+            caption=f"📎 Comprobante de {tel} (reenviado al grupo)",
+        )
     except Exception as e:
         log.warning("tools_equipo.reenviar_comprobante.fail", tel=tel, error=str(e))
-        return {"ok": False, "error": f"no se pudo reenviar el comprobante: {str(e)[:160]}"}
+        return {"ok": False, "error": f"no se pudo reenviar la imagen: {str(e)[:160]}"}
     log.info("tools_equipo.reenviar_comprobante_cliente", tel=tel, destino=destino)
     return {"ok": True, "nota": f"Comprobante de {tel} reenviado a este grupo. "
                                 "Confírmalo brevemente en tu texto."}

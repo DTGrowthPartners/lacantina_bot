@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
 from app.claude import tools
-from app.flows.conversation import _nombre_reserva_explicito
+from app.flows.conversation import _nombre_reserva_explicito, _respuesta_confirmacion_cancelacion
 
 
 class NombreReservaTests(unittest.TestCase):
@@ -244,6 +244,41 @@ class NombreReservaTests(unittest.TestCase):
         self.assertEqual(nombre, "Melissa Urueta")
 
 
+    def test_nombre_despues_de_pregunta_con_flyer_intermedio(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="Lo hacemos entonces? A nombre de quien aparto la mesa?",
+            ),
+            SimpleNamespace(direccion="outbound", contenido="[flyer del evento]"),
+        ]
+
+        nombre = _nombre_reserva_explicito("Astrid Rojas", historial)
+
+        self.assertEqual(nombre, "Astrid Rojas")
+
+    def test_confirmacion_si_recupera_nombre_previo_con_flyer_intermedio(self):
+        historial = [
+            SimpleNamespace(
+                direccion="outbound",
+                contenido="Lo hacemos entonces? A nombre de quien aparto la mesa?",
+            ),
+            SimpleNamespace(direccion="outbound", contenido="[flyer del evento]"),
+            SimpleNamespace(direccion="inbound", contenido="Astrid Rojas"),
+            SimpleNamespace(
+                direccion="outbound",
+                contenido=(
+                    "Solo para confirmar antes de apartar - "
+                    "a nombre de quien hago la reserva? Es Astrid Rojas?"
+                ),
+            ),
+        ]
+
+        nombre = _nombre_reserva_explicito("Si", historial)
+
+        self.assertEqual(nombre, "Astrid Rojas")
+
+
 class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_bloquea_reserva_si_solo_hay_nombre_inferido(self):
         ctx = {
@@ -344,6 +379,55 @@ class ReservaGuardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result["falta_nombre_confirmado"])
         crear.assert_not_awaited()
+
+    async def test_acepta_nombre_valido_si_aparece_en_historial_cliente(self):
+        ctx = {
+            "cliente_numero": "+573156592245",
+            "nombre_reserva_confirmado": None,
+            "mensaje_actual_cliente": "Correcto",
+            "historial_cliente_reciente": [
+                {
+                    "direccion": "inbound",
+                    "contenido": "Perfecto!! Diana Paez por favor",
+                },
+            ],
+            "outbox": [],
+        }
+        respuesta = {
+            "ok": True,
+            "reserva": {
+                "id": 281,
+                "estado": "confirmada",
+                "mesa_numero": 8,
+                "mesa_zona": "Cantina",
+            },
+        }
+
+        with (
+            patch.object(
+                tools.cantina_api,
+                "listar_reservas",
+                new=AsyncMock(return_value={"ok": True, "reservas": []}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "crear_reserva",
+                new=AsyncMock(return_value=respuesta),
+            ) as crear,
+        ):
+            result = await tools.handler_crear_reserva(
+                {
+                    "fecha": "2026-07-26",
+                    "mesa_id": 8,
+                    "nombre_cliente": "Diana Paez",
+                    "num_personas": 2,
+                },
+                ctx,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(ctx["nombre_reserva_confirmado"], "Diana Paez")
+        crear.assert_awaited_once()
 
     async def test_alerta_grupo_incluye_detalle_completo(self):
         ctx = {
@@ -715,6 +799,75 @@ class CambioMesaTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(resultado["usar_cambio_mesa"])
         consultar.assert_not_awaited()
+
+
+class CancelacionClienteTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.reserva = {
+            "id": 303,
+            "fecha": "2026-08-22",
+            "mesa_id": 5,
+            "mesa_numero": 5,
+            "nombre_cliente": "Carlos Mario Giraldo",
+            "telefono": "+573044495562",
+            "num_personas": 4,
+            "estado": "confirmada",
+            "tipo_reserva": "mesa",
+            "grupo_id": None,
+        }
+
+    async def test_no_cancela_si_cancelar_es_ambiguo_con_pago(self):
+        ctx = {
+            "cliente_numero": "+573044495562",
+            "intent": "cancelar_reserva",
+            "mensaje_actual_cliente": "Hay que cancelar",
+            "outbox": [],
+        }
+        with (
+            patch.object(tools.cantina_api, "reservas_cliente", new=AsyncMock()) as consultar,
+            patch.object(tools.cantina_api, "cancelar_reserva", new=AsyncMock()) as cancelar,
+        ):
+            resultado = await tools.handler_cancelar_reserva_cliente(
+                {"fecha": "2026-08-22", "reserva_id": 303},
+                ctx,
+            )
+
+        self.assertTrue(resultado["requiere_confirmacion_cancelacion"])
+        consultar.assert_not_awaited()
+        cancelar.assert_not_awaited()
+
+    async def test_pide_confirmacion_si_cliente_pide_cancelar_reserva_claro(self):
+        ctx = {
+            "cliente_numero": "+573044495562",
+            "intent": "cancelar_reserva",
+            "mensaje_actual_cliente": "Quiero cancelar mi reserva",
+            "outbox": [],
+        }
+        with (
+            patch.object(
+                tools.cantina_api,
+                "reservas_cliente",
+                new=AsyncMock(return_value={"ok": True, "reservas": [self.reserva]}),
+            ),
+            patch.object(
+                tools.cantina_api,
+                "cancelar_reserva",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as cancelar,
+        ):
+            resultado = await tools.handler_cancelar_reserva_cliente(
+                {"fecha": "2026-08-22", "reserva_id": 303},
+                ctx,
+            )
+
+        self.assertTrue(resultado["requiere_confirmacion_cancelacion"])
+        self.assertIn("¿Estás seguro", resultado["pregunta"])
+        cancelar.assert_not_awaited()
+
+    def test_detecta_respuesta_si_no_para_cancelacion_pendiente(self):
+        self.assertEqual(_respuesta_confirmacion_cancelacion("sí, cancélala"), "si")
+        self.assertEqual(_respuesta_confirmacion_cancelacion("no la canceles"), "no")
+        self.assertIsNone(_respuesta_confirmacion_cancelacion("dónde pago el cover"))
 
 
 class CambioPersonasTests(unittest.IsolatedAsyncioTestCase):

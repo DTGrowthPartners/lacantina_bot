@@ -76,6 +76,11 @@ def format_phone(numero: str | None) -> str:
     if not numero:
         return ""
     n = numero.strip()
+    # Chats `@lid`: WhatsApp no expone el teléfono real, sólo un id anónimo.
+    # Formatearlo como número miente (queda con pinta de +27 sudafricano) y
+    # hace que el operador no lo distinga de un cliente normal.
+    if n.endswith("@lid"):
+        return f"ID anónimo · …{n.split('@', 1)[0][-4:]}"
     only = "".join(c for c in n if c.isdigit())
     if n.startswith("+57") and len(only) == 12:
         # +57 XXX XXX XXXX

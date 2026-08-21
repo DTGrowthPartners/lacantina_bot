@@ -46,6 +46,45 @@ class EscalacionHumanaTests(unittest.TestCase):
         self.assertFalse(agregada)
         self.assertEqual(outbox, [])
 
+    def test_no_escala_cierre_simple_aunque_clasifique_humano(self):
+        outbox = []
+
+        agregada = _asegurar_escalacion_humana(
+            outbox,
+            intent="pide_humano",
+            cliente_numero="+573126509610",
+            mensaje_cliente="Si ya vamos para allá\nGracias",
+        )
+
+        self.assertFalse(agregada)
+        self.assertEqual(outbox, [])
+
+    def test_no_escala_pedido_generico_de_informacion(self):
+        outbox = []
+
+        agregada = _asegurar_escalacion_humana(
+            outbox,
+            intent="pide_humano",
+            cliente_numero="186290297381022@lid",
+            mensaje_cliente="¡Hola! Quiero más información",
+        )
+
+        self.assertFalse(agregada)
+        self.assertEqual(outbox, [])
+
+    def test_queja_real_sigue_escalando(self):
+        outbox = []
+
+        agregada = _asegurar_escalacion_humana(
+            outbox,
+            intent="queja",
+            cliente_numero="+573126509610",
+            mensaje_cliente="Necesito hablar con alguien, llevo media hora esperando la reserva",
+        )
+
+        self.assertTrue(agregada)
+        self.assertEqual(len(outbox), 1)
+
     def test_adjunta_audio_en_escalacion_auto(self):
         outbox = []
 

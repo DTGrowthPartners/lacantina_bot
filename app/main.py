@@ -1158,7 +1158,7 @@ async def webhook(
                 session, cliente_id=cliente.id, direccion="inbound",
                 tipo=msg.tipo, contenido=msg.texto,
                 whapi_message_id=msg.id, media_url=msg.media_url,
-                metadata={"bot_global_pausado": True},
+                metadata=_metadata_whapi_contacto(msg, {"bot_global_pausado": True}),
             )
             log.info("webhook.bot_global_pausado_ignorado", cliente=msg.from_number)
             resultados.append({"id": msg.id, "status": "bot_global_pausado"})
@@ -1201,7 +1201,7 @@ async def webhook(
                 session, cliente_id=cliente.id, direccion="inbound",
                 tipo=msg.tipo, contenido=msg.texto,
                 whapi_message_id=msg.id, media_url=msg.media_url,
-                metadata={"silencio": "etiqueta=personal"},
+                metadata=_metadata_whapi_contacto(msg, {"silencio": "etiqueta=personal"}),
             )
             log.info("webhook.silencio_personal", cliente=msg.from_number)
             resultados.append({"id": msg.id, "status": "silenced_personal"})
@@ -1222,7 +1222,10 @@ async def webhook(
                 session, cliente_id=cliente.id, direccion="inbound",
                 tipo=msg.tipo, contenido=msg.texto,
                 whapi_message_id=msg.id, media_url=msg.media_url,
-                metadata={"silencio": "sin_clasificar_politica_estricta"},
+                metadata=_metadata_whapi_contacto(
+                    msg,
+                    {"silencio": "sin_clasificar_politica_estricta"},
+                ),
             )
             ventana = datetime.now(timezone.utc) - _td(hours=6)
             ya_hay = (await session.execute(
@@ -1284,7 +1287,7 @@ async def webhook(
                 contenido=msg.texto,
                 whapi_message_id=msg.id,
                 media_url=msg.media_url,
-                metadata={"bot_pausado": True},
+                metadata=_metadata_whapi_contacto(msg, {"bot_pausado": True}),
             )
             resultados.append({"id": msg.id, "status": "paused_human"})
             continue
@@ -1297,6 +1300,7 @@ async def webhook(
             contenido=msg.texto,
             whapi_message_id=msg.id,
             media_url=msg.media_url,
+            metadata=_metadata_whapi_contacto(msg),
         )
         log.info(
             "webhook.inbound",
@@ -1463,6 +1467,17 @@ def _lock_for_equipo(chat_key: str) -> asyncio.Lock:
 
 _ULTIMA_ESCALACION: dict[str, float] = {}
 _ESCALACION_THROTTLE_S = 600  # 10 min: evita spam si el cliente reescribe lo mismo
+
+
+def _metadata_whapi_contacto(msg: MensajeWhapi, extra: dict | None = None) -> dict:
+    metadata = dict(extra or {})
+    if msg.lid:
+        metadata["whapi_lid"] = msg.lid
+    if msg.phone_hint:
+        metadata["phone_hint"] = msg.phone_hint
+    if msg.chat_id:
+        metadata["chat_id"] = msg.chat_id
+    return metadata
 
 
 async def _drain_outbox(outbox: list[dict]) -> None:

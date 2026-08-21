@@ -48,12 +48,21 @@ class Settings(BaseSettings):
     whisper_idioma: str = "es"                # hint de idioma → mejor precisión
     feature_transcribir_audio: bool = True
 
+    # ── Whisper local (fallback cuando la API de OpenAI falla) ─────────────
+    # Corre faster-whisper en CPU dentro de `whisper-env` (venv aparte, es el
+    # único con la librería). Se activó tras quedarnos sin créditos en OpenAI:
+    # el bot dejó de "escuchar" notas de voz en silencio durante días.
+    whisper_local_fallback: bool = True
+    whisper_local_python: str = "/home/ubuntu/whisper-env/bin/python"
+    whisper_local_modelo: str = "small"       # tiny | base | small | medium
+    whisper_local_timeout: int = 180          # segundos (CPU, carga modelo cada vez)
+
     # ── whapi (canal WhatsApp de La Cantina) ────────────────────────────────
     whapi_base_url: str = "https://gate.whapi.cloud"
     whapi_token: str = Field(default="")
     whapi_numero_bot: str = "+573008641322"   # número del bot oficial del venue
     whapi_webhook_secret: str = Field(default="")
-    whapi_webhook_url: str = "https://cantinabot.dtgrowthpartners.com/webhook"
+    whapi_webhook_url: str = "https://cantinabot.dtgp.ai/webhook"
 
     # ── Identidad ───────────────────────────────────────────────────────────
     identidad_principal_nombre: str = "La Cantina Plus"

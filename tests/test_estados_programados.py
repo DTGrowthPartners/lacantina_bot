@@ -166,8 +166,55 @@ class ToolEstadoProgramadoTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(resultado["ok"])
-        payload = crear_evento.await_args.args[0]
-        self.assertEqual(payload["hora_inicio"], "20:30")
-        self.assertEqual(payload["valor_cover"], 20000)
+        crear_evento.assert_not_awaited()
         self.assertFalse(resultado["evento_sync"]["evento_desde_estado"]["creado"])
-        self.assertTrue(resultado["evento_sync"]["evento_desde_estado"]["actualizado"])
+        self.assertFalse(resultado["evento_sync"]["evento_desde_estado"]["actualizado"])
+        self.assertTrue(resultado["evento_sync"]["evento_desde_estado"]["omitido_por_existente"])
+
+    async def test_publicar_estado_sin_hora_usa_evento_existente_y_no_crea_otro(self):
+        ctx = {
+            "rol": "equipo",
+            "imagen_bytes": b"flyer",
+            "imagen_mime": "image/png",
+            "miembro_nombre": "Edgardo",
+        }
+        with patch(
+            "app.whapi.client.publicar_story_imagen_bytes",
+            new=AsyncMock(),
+        ), patch(
+            "app.promo_estado.guardar_estado",
+        ), patch.object(
+            tools_equipo.cantina_api,
+            "consultar_evento",
+            new=AsyncMock(return_value={
+                "ok": True,
+                "eventos": [
+                    {"fecha": "2099-01-02", "hora_inicio": "20:30", "nombre": "Evento previo"},
+                ],
+            }),
+        ), patch.object(
+            tools_equipo.cantina_api,
+            "crear_evento",
+            new=AsyncMock(return_value={"ok": True}),
+        ) as crear_evento, patch.object(
+            tools_equipo,
+            "guardar_flyer",
+            return_value=object(),
+        ) as guardar_flyer:
+            resultado = await tools_equipo.handler_publicar_estado(
+                {
+                    "evento_fecha": "2099-01-02",
+                    "evento_nombre": "Evento previo",
+                    "evento_tiene_cover": True,
+                    "evento_valor_cover": 20000,
+                },
+                ctx,
+            )
+
+        self.assertTrue(resultado["ok"])
+        crear_evento.assert_not_awaited()
+        guardar_flyer.assert_called_once_with("2099-01-02", "20:30", b"flyer", "image/png")
+        evento_sync = resultado["evento_sync"]["evento_desde_estado"]
+        self.assertFalse(evento_sync["creado"])
+        self.assertTrue(evento_sync["omitido_por_existente"])
+        self.assertEqual(evento_sync["hora_inicio"], "20:30")

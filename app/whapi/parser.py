@@ -40,6 +40,10 @@ class MensajeWhapi:
     # Pushname: nombre que el cliente configuró en su perfil de WhatsApp.
     # Solo viene en inbound. Útil para conocer el nombre antes de que lo diga.
     from_name: str | None = None
+    # Nuevo formato WhatsApp LID (ej. 1862...@lid). Es un identificador de chat,
+    # no un teléfono. Si whapi trae un teléfono real separado, va en phone_hint.
+    lid: str | None = None
+    phone_hint: str | None = None
     # Atribución de anuncio (Meta "click-to-WhatsApp"): whapi entrega un objeto
     # `referral` cuando el chat se inició desde un anuncio. Señal confiable de
     # que la conversación viene de la pauta. None si no vino de un anuncio.
@@ -123,13 +127,67 @@ def _extraer_texto_fallback(msg: dict[str, Any]) -> str | None:
 
 
 def normalizar_numero(raw: str | None) -> str | None:
-    """De '57302...@s.whatsapp.net' o '57302...' a '+57302...'."""
+    """Normaliza IDs de WhatsApp.
+
+    - '57302...@s.whatsapp.net' o '57302...' -> '+57302...'
+    - '1862...@lid' se preserva como chat id: NO es teléfono real.
+    - '<id>@g.us' se preserva como group id.
+    """
     if not raw:
         return None
-    n = raw.split("@", 1)[0].replace(" ", "")
+    n = str(raw).strip().replace(" ", "")
+    if n.endswith("@lid") or n.endswith("@g.us"):
+        return n
+    n = n.split("@", 1)[0]
     if not n.startswith("+"):
         n = "+" + n
     return n
+
+
+def _normalizar_phone_hint(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value or value.endswith("@lid") or value.endswith("@g.us"):
+        return None
+    if value.endswith("@s.whatsapp.net") or value.endswith("@c.us"):
+        return normalizar_numero(value)
+    digits = re.sub(r"\D", "", value)
+    if 10 <= len(digits) <= 15:
+        return "+" + digits
+    return None
+
+
+def _extraer_phone_hint(msg: dict[str, Any]) -> str | None:
+    """Busca teléfonos reales en campos conocidos, sin confundir LIDs con números."""
+    candidatos: list[object] = [
+        msg.get("from_phone"),
+        msg.get("sender_phone"),
+        msg.get("phone"),
+        msg.get("wa_id"),
+        msg.get("sender_id"),
+    ]
+    for key in ("contact", "sender", "chat", "from_user", "profile"):
+        obj = msg.get(key)
+        if isinstance(obj, dict):
+            candidatos.extend(
+                obj.get(k)
+                for k in ("phone", "wa_id", "number", "jid", "id")
+            )
+    ctx = msg.get("context")
+    if isinstance(ctx, dict):
+        for key in ("contact", "sender", "profile"):
+            obj = ctx.get(key)
+            if isinstance(obj, dict):
+                candidatos.extend(
+                    obj.get(k)
+                    for k in ("phone", "wa_id", "number", "jid", "id")
+                )
+    for candidato in candidatos:
+        phone = _normalizar_phone_hint(candidato)
+        if phone:
+            return phone
+    return None
 
 
 def parsear_mensaje(msg: dict[str, Any]) -> MensajeWhapi | None:
@@ -218,6 +276,12 @@ def parsear_mensaje(msg: dict[str, Any]) -> MensajeWhapi | None:
 
     raw_from = msg.get("from")
     raw_chat_id = msg.get("chat_id")
+    lid = None
+    for raw_id in (raw_from, raw_chat_id):
+        if isinstance(raw_id, str) and raw_id.strip().endswith("@lid"):
+            lid = raw_id.strip().replace(" ", "")
+            break
+    phone_hint = _extraer_phone_hint(msg)
     # Caso 1: INBOUND → `from` es el autor (cliente que escribió).
     # Caso 2: OUTBOUND 1:1 (chat con cliente) → `chat_id` es el destinatario
     #   (numero_cliente). Lo mantenemos como `from_number` por compatibilidad
@@ -314,6 +378,8 @@ def parsear_mensaje(msg: dict[str, Any]) -> MensajeWhapi | None:
         from_name=from_name,
         referral=referral,
         mentions=mentions,
+        lid=lid,
+        phone_hint=phone_hint,
     )
 
 

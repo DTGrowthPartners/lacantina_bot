@@ -21,11 +21,14 @@ from datetime import datetime, timedelta
 from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select, update
+
 from app.integrations import cantina_api
 from app.eventos import clave_orden_evento, extraer_eventos
 from app.event_media import leer_descripcion_evento
+from app.db.models import Cliente
 from app.logging_setup import log
-from app.nombres import limpiar_nombre_reserva, validar_nombre_reserva
+from app.nombres import limpiar_nombre_reserva, normalizar_texto_nombre, validar_nombre_reserva
 
 
 _POLITICA_HORARIO_COVER = (
@@ -188,9 +191,113 @@ def _nombre_reserva_basura(valor: str | None) -> bool:
     return bool(_normalizar_nombre(valor)) and not validar_nombre_reserva(valor).es_nombre
 
 
+def _normalizar_para_busqueda_nombre(valor: str | None) -> str:
+    texto = normalizar_texto_nombre(valor)
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    return " ".join(texto.split())
+
+
+def _texto_cliente_simple(valor: str | None) -> str:
+    texto = normalizar_texto_nombre(valor)
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    return " ".join(texto.split())
+
+
+def _es_pedido_info_general_sin_equipo(valor: str | None) -> bool:
+    texto = _texto_cliente_simple(valor)
+    if not texto or len(texto) > 120:
+        return False
+    if re.search(r"\b(?:mas informacion|informacion|info)\b", texto):
+        return True
+    return bool(re.fullmatch(
+        r"(?:hola|buenas|buenas noches|buenas tardes|buenos dias)?\s*"
+        r"(?:quiero|quisiera|dame|me das|me regalas|necesito|puedes darme)\s+"
+        r"(?:info|informacion|mas informacion).{0,30}",
+        texto,
+    ))
+
+
+def _cancelacion_reserva_es_clara(ctx: dict) -> bool:
+    texto = _texto_cliente_simple(ctx.get("mensaje_actual_cliente"))
+    if not texto:
+        return False
+
+    if texto in {"cancelar", "cancelo", "cancelala", "cancelarla"}:
+        return True
+
+    verbo_cancelar = r"(?:cancelar|cancela|cancelame|cancelamela|cancelo|anular|anula|borrar|borra|eliminar|elimina)"
+    objeto_reserva = r"(?:reserva|reservacion|mesa|apartado)"
+    if re.search(rf"\b{verbo_cancelar}\b.{{0,50}}\b{objeto_reserva}\b", texto):
+        return True
+    if re.search(rf"\b{objeto_reserva}\b.{{0,50}}\b{verbo_cancelar}\b", texto):
+        return True
+    return False
+
+
+async def _guardar_cancelacion_reserva_pendiente(ctx: dict, reserva: dict) -> None:
+    session = ctx.get("session")
+    cliente_id = ctx.get("cliente_id")
+    if not session or not cliente_id:
+        return
+    row = (await session.execute(
+        select(Cliente.metadata_).where(Cliente.id == cliente_id)
+    )).first()
+    metadata = dict((row[0] if row else None) or {})
+    metadata["cancelacion_reserva_pendiente"] = {
+        "creada_en": datetime.now(ZoneInfo("UTC")).isoformat(),
+        "reserva_id": reserva.get("id"),
+        "fecha": reserva.get("fecha"),
+        "mesa_numero": reserva.get("mesa_numero") or reserva.get("mesa_id"),
+        "nombre_cliente": reserva.get("nombre_cliente"),
+        "tipo_reserva": reserva.get("tipo_reserva"),
+        "grupo_id": reserva.get("grupo_id"),
+    }
+    await session.execute(
+        update(Cliente)
+        .where(Cliente.id == cliente_id)
+        .values(metadata_=metadata)
+    )
+
+
+def _telefono_cliente_backend(ctx: dict) -> str | None:
+    """Telefono para backend de reservas; si el chat es LID, usa phone_hint."""
+    return ctx.get("cliente_phone_hint") or ctx.get("cliente_numero")
+
+
+def _nombre_aparece_en_mensajes_cliente(nombre: str | None, ctx: dict) -> bool:
+    nombre_norm = _normalizar_para_busqueda_nombre(nombre)
+    if not nombre_norm:
+        return False
+    textos = [ctx.get("mensaje_actual_cliente") or ""]
+    for item in ctx.get("historial_cliente_reciente") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("direccion") == "inbound" and item.get("contenido"):
+            textos.append(str(item.get("contenido") or ""))
+    for texto in textos:
+        texto_norm = _normalizar_para_busqueda_nombre(texto)
+        if f" {nombre_norm} " in f" {texto_norm} ":
+            return True
+    return False
+
+
 def _validar_nombre_reserva(args: dict, ctx: dict) -> dict | None:
     """Impide usar el pushname de WhatsApp o un nombre inferido por el modelo."""
     validacion = validar_nombre_reserva(ctx.get("nombre_reserva_confirmado"))
+    if not validacion.es_nombre:
+        candidato = args.get("nombre_cliente")
+        validacion_candidato = validar_nombre_reserva(candidato)
+        if (
+            validacion_candidato.es_nombre
+            and _nombre_aparece_en_mensajes_cliente(validacion_candidato.nombre_limpio, ctx)
+        ):
+            log.info(
+                "tools.reserva.nombre_confirmado_por_historial",
+                cliente=ctx.get("cliente_numero"),
+                nombre=validacion_candidato.nombre_limpio,
+            )
+            ctx["nombre_reserva_confirmado"] = validacion_candidato.nombre_limpio
+            validacion = validacion_candidato
     if not validacion.es_nombre:
         log.warning(
             "tools.reserva.nombre_no_confirmado",
@@ -725,7 +832,7 @@ TOOL_DEFINITIONS: list[dict] = [
         "description": (
             "Cuando el cliente envía comprobante de pago del cover, marca la reserva "
             "como 'anticipado' (pendiente verificación humana) y escala al equipo. "
-            "La imagen/PDF actual se toma automáticamente del contexto; NO inventes ni "
+            "La imagen actual se toma automáticamente del contexto; NO inventes ni "
             "pidas una URL."
         ),
         "input_schema": {
@@ -878,7 +985,7 @@ async def handler_consultar_disponibilidad(args: dict, ctx: dict) -> dict:
             )
         # Si el cliente ya tiene reserva para esta fecha, señalarlo claramente.
         # Puede pedir una mesa adicional; solo hay que evitar repetir la misma mesa.
-        ya = await _cliente_ya_reservo(fecha, ctx.get("cliente_numero"))
+        ya = await _cliente_ya_reservo(fecha, _telefono_cliente_backend(ctx))
         if ya:
             res["reserva_propia"] = ya
             res["nota_reserva_propia"] = (
@@ -949,7 +1056,7 @@ async def handler_crear_reserva(args: dict, ctx: dict) -> dict:
     error_nombre = _validar_nombre_reserva(args, ctx)
     if error_nombre:
         return error_nombre
-    tel = args.get("telefono") or ctx.get("cliente_numero")
+    tel = args.get("telefono") or _telefono_cliente_backend(ctx)
     ya = await _cliente_ya_reservo(args.get("fecha"), tel)
     mesa_solicitada = args.get("mesa_id")
     mesas_ya = {str(m) for m in (ya or []) if m is not None}
@@ -989,7 +1096,7 @@ async def handler_crear_reserva_grupo(args: dict, ctx: dict) -> dict:
     error_nombre = _validar_nombre_reserva(args, ctx)
     if error_nombre:
         return error_nombre
-    tel = args.get("telefono") or ctx.get("cliente_numero")
+    tel = args.get("telefono") or _telefono_cliente_backend(ctx)
     ya = await _cliente_ya_reservo(args.get("fecha"), tel)
     mesas_solicitadas = [m for m in (args.get("mesa_numeros") or []) if m is not None]
     mesas_ya = {str(m) for m in (ya or []) if m is not None}
@@ -1030,7 +1137,7 @@ async def handler_crear_reserva_sala(args: dict, ctx: dict) -> dict:
     error_nombre = _validar_nombre_reserva(args, ctx)
     if error_nombre:
         return error_nombre
-    tel = args.get("telefono") or ctx.get("cliente_numero")
+    tel = args.get("telefono") or _telefono_cliente_backend(ctx)
     ya = await _cliente_ya_reservo(args.get("fecha"), tel)
     if ya:
         args["notas"] = (args.get("notas") or "") or f"Reserva adicional; ya tenía mesa(s) {ya}."
@@ -1069,7 +1176,7 @@ async def handler_consultar_reserva_cliente(args: dict, ctx: dict) -> dict:
     if not args.get("reserva_id"):
         precargadas = ctx.get("reservas_cliente_precargadas")
         if precargadas is None:
-            res = await cantina_api.reservas_cliente(ctx.get("cliente_numero"))
+            res = await cantina_api.reservas_cliente(_telefono_cliente_backend(ctx))
             if not (isinstance(res, dict) and res.get("ok", True)):
                 return res
             reservas = res.get("reservas") or []
@@ -1089,9 +1196,9 @@ async def handler_consultar_reserva_cliente(args: dict, ctx: dict) -> dict:
     if not (isinstance(res, dict) and res.get("ok", True)):
         return res
     reserva = _extraer_reserva(res)
-    if not _mismo_telefono(reserva.get("telefono"), ctx.get("cliente_numero")):
+    if not _mismo_telefono(reserva.get("telefono"), _telefono_cliente_backend(ctx)):
         log.warning("tools.reserva_ajena_bloqueada",
-                    reserva_id=args.get("reserva_id"), cliente=ctx.get("cliente_numero"))
+                    reserva_id=args.get("reserva_id"), cliente=_telefono_cliente_backend(ctx))
         return {"ok": False, "ajena": True,
                 "error": "Esa reserva no está a tu número. Por privacidad solo puedo darte "
                          "información de TU propia reserva."}
@@ -1100,7 +1207,7 @@ async def handler_consultar_reserva_cliente(args: dict, ctx: dict) -> dict:
 
 async def handler_cambiar_mesa_reserva_cliente(args: dict, ctx: dict) -> dict:
     """Cambia mesa sin dejar al cliente sin reserva y tolera reintentos."""
-    telefono = ctx.get("cliente_numero")
+    telefono = _telefono_cliente_backend(ctx)
     fecha = args.get("fecha")
     mesa_nueva = args.get("mesa_nueva")
     consulta = await cantina_api.reservas_cliente(telefono)
@@ -1231,7 +1338,7 @@ async def handler_cambiar_mesa_reserva_cliente(args: dict, ctx: dict) -> dict:
 
 async def handler_actualizar_personas_reserva_cliente(args: dict, ctx: dict) -> dict:
     """Actualiza asistentes de una reserva propia sin pedir confirmación extra."""
-    telefono = ctx.get("cliente_numero")
+    telefono = _telefono_cliente_backend(ctx)
     nuevo_numero = args.get("num_personas")
     try:
         nuevo_numero = int(nuevo_numero)
@@ -1335,15 +1442,16 @@ async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
     if not (reserva_id and url):
         return {
             "ok": False,
-            "error": "reserva_id y una imagen/PDF de comprobante son requeridos",
+            "error": "reserva_id y una imagen de comprobante son requeridos",
         }
     # Verificar que la reserva sea del cliente antes de tocarla.
+    reserva: dict | None = None
     det = await cantina_api.detalle_reserva(reserva_id)
     if isinstance(det, dict) and det.get("ok", True):
         reserva = _extraer_reserva(det)
-        if reserva and not _mismo_telefono(reserva.get("telefono"), ctx.get("cliente_numero")):
+        if reserva and not _mismo_telefono(reserva.get("telefono"), _telefono_cliente_backend(ctx)):
             log.warning("tools.comprobante_reserva_ajena", reserva_id=reserva_id,
-                        cliente=ctx.get("cliente_numero"))
+                        cliente=_telefono_cliente_backend(ctx))
             return {"ok": False, "error": "Esa reserva no está a tu número; no puedo "
                                           "registrar el comprobante. Verifica el número de reserva."}
     res = await cantina_api.actualizar_reserva(reserva_id, {
@@ -1356,10 +1464,13 @@ async def handler_registrar_comprobante_cover(args: dict, ctx: dict) -> dict:
             (x for x in outbox if x.get("tipo") == "comprobante_cover"),
             None,
         )
+        nombre_reserva = (reserva or {}).get("nombre_cliente") or (reserva or {}).get("nombre")
+        telefono_reserva = (reserva or {}).get("telefono") or ctx.get("cliente_numero") or "?"
         mensaje = (
             f"💸 *Comprobante de cover recibido*\n"
             f"Reserva: #{reserva_id}\n"
-            f"Cliente: {ctx.get('cliente_numero') or '?'}\n\n"
+            f"A nombre de: {nombre_reserva or 'No disponible'}\n"
+            f"Teléfono: {telefono_reserva}\n\n"
             "Para aprobarlo, menciona a Nicky y dile: "
             f"“confirma el pago de la reserva #{reserva_id} y avísale al cliente”."
         )
@@ -1391,7 +1502,23 @@ async def handler_cancelar_reserva_cliente(args: dict, ctx: dict) -> dict:
                 "cambiar_mesa_reserva_cliente; conserva nombre, personas y teléfono."
             ),
         }
-    consulta = await cantina_api.reservas_cliente(ctx.get("cliente_numero"))
+    if not _cancelacion_reserva_es_clara(ctx):
+        log.warning(
+            "tools.cancelacion_reserva.ambigua_bloqueada",
+            cliente=ctx.get("cliente_numero"),
+            mensaje=(ctx.get("mensaje_actual_cliente") or "")[:120],
+        )
+        return {
+            "ok": False,
+            "requiere_confirmacion_cancelacion": True,
+            "error": (
+                "No canceles todavía: el cliente no pidió cancelar la reserva de "
+                "forma clara. En Colombia 'cancelar' también puede significar pagar. "
+                "Pregunta si se refiere a pagar el cover/entrada o a cancelar la "
+                "reserva."
+            ),
+        }
+    consulta = await cantina_api.reservas_cliente(_telefono_cliente_backend(ctx))
     if not (isinstance(consulta, dict) and consulta.get("ok", True)):
         return consulta
     reservas = consulta.get("reservas") or []
@@ -1410,18 +1537,29 @@ async def handler_cancelar_reserva_cliente(args: dict, ctx: dict) -> dict:
         }
 
     reserva = reservas[0]
-    tipo = reserva.get("tipo_reserva")
-    if tipo == "sala":
-        res = await cantina_api.cancelar_reserva_sala(reserva["id"])
-    elif reserva.get("grupo_id"):
-        res = await cantina_api.cancelar_grupo(reserva["grupo_id"])
-    else:
-        res = await cantina_api.cancelar_reserva(reserva["id"])
-    if isinstance(res, dict) and res.get("ok"):
-        res["instruccion"] = (
-            f"Confirma que la reserva del {reserva.get('fecha')} fue cancelada."
-        )
-    return res
+    await _guardar_cancelacion_reserva_pendiente(ctx, reserva)
+    mesa = reserva.get("mesa_numero") or reserva.get("mesa_id")
+    fecha = reserva.get("fecha")
+    nombre = reserva.get("nombre_cliente")
+    detalle = []
+    if fecha:
+        detalle.append(f"del {fecha}")
+    if mesa:
+        detalle.append(f"mesa {mesa}")
+    if nombre:
+        detalle.append(f"a nombre de {nombre}")
+    detalle_txt = ", ".join(detalle) or "encontrada"
+    return {
+        "ok": False,
+        "requiere_confirmacion_cancelacion": True,
+        "reserva_id": reserva.get("id"),
+        "pregunta": f"¿Estás seguro de que quieres cancelar tu reserva {detalle_txt}? Responde Sí o No.",
+        "instruccion": (
+            "No canceles todavía. Envía exactamente la pregunta de confirmación "
+            "al cliente y espera su siguiente respuesta. Si responde sí, el sistema "
+            "cancelará la reserva; si responde no, mantendrá la reserva."
+        ),
+    }
 
 
 async def handler_enviar_como_llegar(args: dict, ctx: dict) -> dict:
@@ -1480,6 +1618,22 @@ async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
     # Dedup intra-turno: Claude a veces llama esta tool varias veces dentro del
     # mismo tool-loop (hasta 5 rondas) → reenviaba el MISMO aviso al grupo 5
     # veces. Con una sola escalación por turno basta.
+    mensaje_actual = ctx.get("mensaje_actual_cliente") or args.get("mensaje") or ""
+    if _es_pedido_info_general_sin_equipo(mensaje_actual):
+        log.info(
+            "tools.escalar_a_equipo.omitido_info_general",
+            cliente_id=ctx.get("cliente_id"),
+            preview=str(mensaje_actual)[:120],
+        )
+        return {
+            "ok": True,
+            "escalado": False,
+            "omitido": "info_general",
+            "nota": (
+                "No avises al equipo por pedidos generales de informacion. "
+                "Responde autonomamente con horario, ubicacion, eventos, carta y como reservar."
+            ),
+        }
     if ctx.get("_ya_escalo"):
         log.info("tools.escalar_a_equipo.dedup", cliente_id=ctx.get("cliente_id"))
         return {
@@ -1517,10 +1671,8 @@ async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
         if ctx.get("incoming_media_tipo") == "audio" and ctx.get("incoming_media_url"):
             item["media_url"] = ctx.get("incoming_media_url")
             item["media_mime"] = ctx.get("incoming_media_mime") or "audio/ogg"
-            item["mensaje"] = (
-                f"{item['mensaje']}\n\n"
-                "🎙️ Nota de voz adjunta para que el equipo la escuche."
-            )
+            mensaje_base = item.get("mensaje") or ""
+            item["mensaje"] = mensaje_base + "\n\n" + "🎙️ Nota de voz adjunta del cliente. Reproducirla para revisar el caso."
         outbox.append(item)
     log.info("tools.escalar_a_equipo",
              tipo=args.get("tipo"), cliente_id=ctx.get("cliente_id"))
