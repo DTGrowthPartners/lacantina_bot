@@ -68,10 +68,79 @@ _VIDEO_COMO_LLEGAR = Path(settings.data_dir) / "media" / "como-llegar.mp4"
 _PLANO_ESPACIO = Path(settings.data_dir) / "media" / "plano-espacio.png"
 _INTENTS_ESCALACION_OBLIGATORIA = {"pide_humano", "queja"}
 _TIPOS_COMPROBANTE_MEDIA = {"imagen", "pdf", "documento"}
+_RE_COMPROBANTE_EXPLICITO = re.compile(
+    r"\b("
+    r"comprobante|soporte|recibo|captura|pantallazo|transfer(?:encia)?|"
+    r"nequi|daviplata|bancolombia|consignaci[oó]n|pag(?:o|ue|ué|ado|ada)|cover"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def _es_media_comprobante(msg: MensajeWhapi) -> bool:
     return bool(msg.media_url and msg.tipo in _TIPOS_COMPROBANTE_MEDIA)
+
+
+def _texto_menciona_comprobante(texto: str | None) -> bool:
+    return bool(_RE_COMPROBANTE_EXPLICITO.search(texto or ""))
+
+
+def _esperaba_comprobante_pago(historial_db: list) -> bool:
+    """Detecta si el bot/equipo acababa de pedir un comprobante de pago."""
+    ultimo_outbound = next(
+        (
+            getattr(h, "contenido", "") or ""
+            for h in reversed(historial_db)
+            if getattr(h, "direccion", None) in ("outbound", "humano")
+            and getattr(h, "contenido", None)
+        ),
+        "",
+    )
+    if not ultimo_outbound:
+        return False
+    texto = ultimo_outbound.lower()
+    pide_comprobante = re.search(
+        r"\b(comprobante|soporte|recibo|pantallazo|captura)\b", texto
+    )
+    contexto_pago = re.search(
+        r"\b(pago|pagues|pagar|cover|transferencia|nequi|daviplata|reserva)\b",
+        texto,
+    )
+    return bool(pide_comprobante and contexto_pago)
+
+
+def _contenido_real_cliente(msg: MensajeWhapi, contenido_usuario: str) -> str:
+    """Devuelve texto/caption real, ignorando placeholders internos del flujo."""
+    texto = (msg.texto or "").strip()
+    if texto:
+        return texto
+    contenido = (contenido_usuario or "").strip()
+    if contenido.startswith("[El cliente envió "):
+        return ""
+    return contenido
+
+
+def _debe_auto_encolar_comprobante(
+    *,
+    msg: MensajeWhapi,
+    intent: str,
+    contenido_usuario: str,
+    historial_db: list,
+) -> bool:
+    """Evita que cualquier imagen sin texto termine en el grupo como comprobante.
+
+    El clasificador puede confundirse con memes, saludos o capturas genéricas.
+    Solo auto-notificamos media como comprobante si hay una señal explícita o si
+    el bot acababa de pedir/esperar ese comprobante.
+    """
+    if not _es_media_comprobante(msg):
+        return False
+    texto_real = _contenido_real_cliente(msg, contenido_usuario)
+    if _texto_menciona_comprobante(texto_real):
+        return True
+    if _esperaba_confirmacion_reserva(historial_db) or _esperaba_comprobante_pago(historial_db):
+        return True
+    return False
 
 
 def _esperaba_confirmacion_reserva(historial_db: list) -> bool:
@@ -512,6 +581,11 @@ async def procesar_mensaje_inbound(
     # 1. Historial (hasta 30 msgs / 48h)
     historial_db = await ultimos_mensajes(session, cliente_id, n=30, horas_max=48)
     comprobante_confirma_reserva = _es_media_comprobante(msg) and _esperaba_confirmacion_reserva(historial_db)
+    comprobante_contextual = _es_media_comprobante(msg) and (
+        comprobante_confirma_reserva
+        or _esperaba_comprobante_pago(historial_db)
+        or _texto_menciona_comprobante(_contenido_real_cliente(msg, contenido_usuario))
+    )
     nombre_reserva_confirmado = _nombre_reserva_explicito(contenido_usuario, historial_db)
     ahora_utc = datetime.now(timezone.utc)
     umbral_gap = ahora_utc - timedelta(hours=12)
@@ -547,7 +621,7 @@ async def procesar_mensaje_inbound(
         contenido_usuario=contenido_usuario,
         cliente_numero=cliente_numero,
     )
-    if _es_media_comprobante(msg) and msg.tipo in {"pdf", "documento"}:
+    if msg.tipo in {"pdf", "documento"} and comprobante_contextual:
         intent = "envia_comprobante_pago"
         log.info("flow.intent_pdf_comprobante", cliente=cliente_numero)
 
@@ -580,7 +654,12 @@ async def procesar_mensaje_inbound(
 
     # 4. Contexto dinámico del cliente + tool use loop
     outbox: list[dict] = []
-    if intent == "envia_comprobante_pago" and _es_media_comprobante(msg):
+    if _debe_auto_encolar_comprobante(
+        msg=msg,
+        intent=intent,
+        contenido_usuario=contenido_usuario,
+        historial_db=historial_db,
+    ):
         es_pdf = msg.tipo in {"pdf", "documento"}
         outbox.append({
             "tipo": "comprobante_cover",

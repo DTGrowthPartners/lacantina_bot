@@ -362,5 +362,9 @@ Responde SOLO con UNO de estos labels, sin explicación:
 - spam                 ← SOLO publicidad externa, bots automáticos o texto completamente irrelevante sin relación con La Cantina
 - otro
 
+Regla importante:
+- Si el mensaje actual solo dice que el cliente envió una imagen sin texto, NO lo clasifiques como `envia_comprobante_pago` salvo que el contexto inmediato diga claramente que el bot/equipo acababa de pedir un comprobante de pago.
+- Usa `envia_comprobante_pago` solo cuando el mensaje mencione pago/comprobante/transferencia/recibo/soporte, o cuando el adjunto llegue justo después de pedir ese comprobante.
+
 Mensaje a clasificar:
 """.strip()

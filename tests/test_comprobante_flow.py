@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, patch
 
 from app import notif_equipo
 from app.claude import tools
-from app.flows.conversation import _esperaba_confirmacion_reserva
+from app.flows.conversation import (
+    _debe_auto_encolar_comprobante,
+    _esperaba_comprobante_pago,
+    _esperaba_confirmacion_reserva,
+)
 
 
 class ComprobanteFlowTests(unittest.IsolatedAsyncioTestCase):
@@ -28,6 +32,41 @@ class ComprobanteFlowTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         self.assertFalse(_esperaba_confirmacion_reserva(historial))
+        self.assertTrue(_esperaba_comprobante_pago(historial))
+
+    async def test_imagen_sin_texto_no_se_auto_encola_solo_por_intent(self):
+        msg = SimpleNamespace(
+            media_url="https://example.test/buenos-dias.jpg",
+            tipo="imagen",
+            texto=None,
+        )
+        historial = [
+            SimpleNamespace(direccion="inbound", contenido=None),
+        ]
+
+        self.assertFalse(_debe_auto_encolar_comprobante(
+            msg=msg,
+            intent="envia_comprobante_pago",
+            contenido_usuario="[El cliente envió una imagen sin texto.]",
+            historial_db=historial,
+        ))
+
+    async def test_imagen_sin_texto_si_se_auto_encola_si_esperaba_comprobante(self):
+        msg = SimpleNamespace(
+            media_url="https://example.test/comprobante.jpg",
+            tipo="imagen",
+            texto=None,
+        )
+        historial = [
+            SimpleNamespace(direccion="outbound", contenido="Cuando pagues mándame el comprobante."),
+        ]
+
+        self.assertTrue(_debe_auto_encolar_comprobante(
+            msg=msg,
+            intent="envia_comprobante_pago",
+            contenido_usuario="[El cliente envió una imagen sin texto.]",
+            historial_db=historial,
+        ))
 
     async def test_notification_prefers_downloaded_image_bytes(self):
         with (
