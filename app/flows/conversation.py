@@ -289,6 +289,29 @@ def _es_pedido_info_general_sin_equipo(texto: str | None) -> bool:
     return False
 
 
+def _es_pedido_asesor_generico_sin_equipo(texto: str | None) -> bool:
+    """Pedir asesor sin explicar el motivo no amerita aviso al grupo."""
+    t = _normalizar_texto_corto(texto)
+    if not t or len(t) > 160:
+        return False
+    pide_asesor = re.search(
+        r"\b(?:asesor|asesora|humano|persona|alguien|administrador|encargad[oa])\b",
+        t,
+    )
+    if not pide_asesor:
+        return False
+    motivo_real = re.search(
+        r"\b(?:queja|problema|error|reclamo|molest[oa]|comprobante|pago|"
+        r"transferencia|reserva|reservacion|mesa|cover|devolucion|reembolso|"
+        r"contratar|contratacion|evento privado|cumpleanos|cumpleanios|"
+        r"corporativo|artista|show|presentarme|tocar|cantar)\b",
+        t,
+    )
+    if motivo_real:
+        return False
+    return True
+
+
 def _pide_plano_espacio(texto: str) -> bool:
     """Detecta pedidos explícitos del plano/mapa del salón."""
     t = (texto or "").lower()
@@ -426,6 +449,8 @@ def _asegurar_escalacion_humana(
     if _es_cierre_simple_sin_equipo(mensaje_cliente):
         return False
     if _es_pedido_info_general_sin_equipo(mensaje_cliente):
+        return False
+    if _es_pedido_asesor_generico_sin_equipo(mensaje_cliente):
         return False
     if any(item.get("clase") == "escalacion" for item in outbox):
         return False

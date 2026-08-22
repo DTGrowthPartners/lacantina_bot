@@ -72,6 +72,19 @@ class EscalacionHumanaTests(unittest.TestCase):
         self.assertFalse(agregada)
         self.assertEqual(outbox, [])
 
+    def test_no_escala_pedido_generico_de_asesor_sin_motivo(self):
+        outbox = []
+
+        agregada = _asegurar_escalacion_humana(
+            outbox,
+            intent="pide_humano",
+            cliente_numero="+573144226354",
+            mensaje_cliente="Hola buenos días\nPara hablar con un asesor",
+        )
+
+        self.assertFalse(agregada)
+        self.assertEqual(outbox, [])
+
     def test_queja_real_sigue_escalando(self):
         outbox = []
 

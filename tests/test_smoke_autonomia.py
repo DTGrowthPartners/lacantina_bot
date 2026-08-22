@@ -58,6 +58,26 @@ class SmokeAutonomiaTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["escalado"])
         self.assertEqual(ctx["outbox"], [])
 
+    async def test_tool_escalar_omite_pedido_generico_de_asesor(self):
+        ctx = {
+            "cliente_id": 124,
+            "cliente_numero": "+573144226354",
+            "mensaje_actual_cliente": "Hola buenos días\nPara hablar con un asesor",
+            "outbox": [],
+        }
+
+        result = await tools.handler_escalar_a_equipo(
+            {
+                "tipo": "pide_humano",
+                "mensaje": "Cliente pide hablar con asesor",
+            },
+            ctx,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["escalado"])
+        self.assertEqual(ctx["outbox"], [])
+
     def test_recupera_nombre_aunque_haya_flyer_entre_pregunta_y_respuesta(self):
         historial = [
             SimpleNamespace(

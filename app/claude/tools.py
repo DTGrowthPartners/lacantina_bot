@@ -217,6 +217,26 @@ def _es_pedido_info_general_sin_equipo(valor: str | None) -> bool:
     ))
 
 
+def _es_pedido_asesor_generico_sin_equipo(valor: str | None) -> bool:
+    texto = _texto_cliente_simple(valor)
+    if not texto or len(texto) > 160:
+        return False
+    if not re.search(
+        r"\b(?:asesor|asesora|humano|persona|alguien|administrador|encargad[oa])\b",
+        texto,
+    ):
+        return False
+    if re.search(
+        r"\b(?:queja|problema|error|reclamo|molest[oa]|comprobante|pago|"
+        r"transferencia|reserva|reservacion|mesa|cover|devolucion|reembolso|"
+        r"contratar|contratacion|evento privado|cumpleanos|cumpleanios|"
+        r"corporativo|artista|show|presentarme|tocar|cantar)\b",
+        texto,
+    ):
+        return False
+    return True
+
+
 def _cancelacion_reserva_es_clara(ctx: dict) -> bool:
     texto = _texto_cliente_simple(ctx.get("mensaje_actual_cliente"))
     if not texto:
@@ -993,7 +1013,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "name": "escalar_a_equipo",
         "description": (
             "Avisa al equipo cuando el caso está fuera de alcance: queja, evento privado, "
-            "grupo corporativo, pago dudoso, pide hablar con humano, etc."
+            "grupo corporativo, pago dudoso, problema real con una reserva o solicitud "
+            "comercial concreta. NO la uses solo porque el cliente dice 'quiero hablar "
+            "con un asesor' sin explicar motivo; primero pregunta cómo puedes ayudar."
         ),
         "input_schema": {
             "type": "object",
@@ -1703,6 +1725,22 @@ async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
             "nota": (
                 "No avises al equipo por pedidos generales de informacion. "
                 "Responde autonomamente con horario, ubicacion, eventos, carta y como reservar."
+            ),
+        }
+    if _es_pedido_asesor_generico_sin_equipo(mensaje_actual):
+        log.info(
+            "tools.escalar_a_equipo.omitido_asesor_generico",
+            cliente_id=ctx.get("cliente_id"),
+            preview=str(mensaje_actual)[:120],
+        )
+        return {
+            "ok": True,
+            "escalado": False,
+            "omitido": "asesor_generico",
+            "nota": (
+                "No avises al equipo solo porque pide un asesor sin motivo. "
+                "Pregunta brevemente en qué necesita ayuda y resuelve autónomamente "
+                "si es información, reservas, menú, ubicación o eventos."
             ),
         }
     if ctx.get("_ya_escalo"):
