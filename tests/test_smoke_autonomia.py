@@ -78,6 +78,26 @@ class SmokeAutonomiaTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["escalado"])
         self.assertEqual(ctx["outbox"], [])
 
+    async def test_tool_escalar_omite_pregunta_de_vestimenta(self):
+        ctx = {
+            "cliente_id": 125,
+            "cliente_numero": "19782736863356@lid",
+            "mensaje_actual_cliente": "Se puede entrar en bermudas y chanclas?",
+            "outbox": [],
+        }
+
+        result = await tools.handler_escalar_a_equipo(
+            {
+                "tipo": "pide_humano",
+                "mensaje": "Cliente pregunta por código de vestimenta",
+            },
+            ctx,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["escalado"])
+        self.assertEqual(ctx["outbox"], [])
+
     def test_recupera_nombre_aunque_haya_flyer_entre_pregunta_y_respuesta(self):
         historial = [
             SimpleNamespace(
@@ -221,6 +241,17 @@ class SmokeAutonomiaTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(objetivo["telefono"], "+573024166892")
         self.assertIn("A que horas cierran", objetivo["consulta"])
+
+    def test_extrae_lid_desde_alerta_con_numero(self):
+        alerta = (
+            "Cliente pregunta si hay código de vestimenta — específicamente si se "
+            "puede entrar en bermudas y chanclas. Solicita respuesta del equipo. "
+            "Número: 19782736863356@lid"
+        )
+
+        objetivo = _cliente_objetivo_desde_alerta_citada(alerta)
+
+        self.assertEqual(objetivo["telefono"], "19782736863356@lid")
 
     async def test_reply_citado_fuerza_telefono_correcto(self):
         enviar = AsyncMock()

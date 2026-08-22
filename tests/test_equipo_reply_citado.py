@@ -33,6 +33,17 @@ class EquipoReplyCitadoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(objetivo["telefono"], "186290297381022@lid")
         self.assertIn("Quiero más información", objetivo["consulta"])
 
+    def test_extrae_lid_desde_alerta_con_campo_numero(self):
+        alerta = (
+            "Cliente pregunta si hay código de vestimenta — específicamente si se "
+            "puede entrar en bermudas y chanclas. Solicita respuesta del equipo. "
+            "Número: 19782736863356@lid"
+        )
+
+        objetivo = _cliente_objetivo_desde_alerta_citada(alerta)
+
+        self.assertEqual(objetivo["telefono"], "19782736863356@lid")
+
     async def test_avisar_cliente_fuerza_telefono_de_alerta_citada(self):
         enviar = AsyncMock()
 

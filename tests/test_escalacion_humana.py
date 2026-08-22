@@ -85,6 +85,22 @@ class EscalacionHumanaTests(unittest.TestCase):
         self.assertFalse(agregada)
         self.assertEqual(outbox, [])
 
+    def test_no_escala_pregunta_de_vestimenta(self):
+        outbox = []
+
+        agregada = _asegurar_escalacion_humana(
+            outbox,
+            intent="pide_humano",
+            cliente_numero="19782736863356@lid",
+            mensaje_cliente=(
+                "Cliente pregunta si hay código de vestimenta, específicamente "
+                "si se puede entrar en bermudas y chanclas."
+            ),
+        )
+
+        self.assertFalse(agregada)
+        self.assertEqual(outbox, [])
+
     def test_queja_real_sigue_escalando(self):
         outbox = []
 

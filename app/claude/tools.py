@@ -237,6 +237,17 @@ def _es_pedido_asesor_generico_sin_equipo(valor: str | None) -> bool:
     return True
 
 
+def _es_pregunta_vestimenta_sin_equipo(valor: str | None) -> bool:
+    texto = _texto_cliente_simple(valor)
+    if not texto or len(texto) > 220:
+        return False
+    return bool(re.search(
+        r"\b(?:codigo\s+de\s+vestimenta|vestimenta|dress\s*code|bermudas?|"
+        r"chanclas?|sandalias?|shorts?|pantaloneta)\b",
+        texto,
+    ))
+
+
 def _cancelacion_reserva_es_clara(ctx: dict) -> bool:
     texto = _texto_cliente_simple(ctx.get("mensaje_actual_cliente"))
     if not texto:
@@ -1741,6 +1752,21 @@ async def handler_escalar_a_equipo(args: dict, ctx: dict) -> dict:
                 "No avises al equipo solo porque pide un asesor sin motivo. "
                 "Pregunta brevemente en qué necesita ayuda y resuelve autónomamente "
                 "si es información, reservas, menú, ubicación o eventos."
+            ),
+        }
+    if _es_pregunta_vestimenta_sin_equipo(mensaje_actual):
+        log.info(
+            "tools.escalar_a_equipo.omitido_vestimenta",
+            cliente_id=ctx.get("cliente_id"),
+            preview=str(mensaje_actual)[:120],
+        )
+        return {
+            "ok": True,
+            "escalado": False,
+            "omitido": "vestimenta",
+            "nota": (
+                "No avises al equipo por código de vestimenta. Responde: se puede "
+                "venir en bermuda si viene presentable; no se permite entrar en chanclas."
             ),
         }
     if ctx.get("_ya_escalo"):

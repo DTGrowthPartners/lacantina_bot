@@ -312,6 +312,17 @@ def _es_pedido_asesor_generico_sin_equipo(texto: str | None) -> bool:
     return True
 
 
+def _es_pregunta_vestimenta_sin_equipo(texto: str | None) -> bool:
+    t = _normalizar_texto_corto(texto)
+    if not t or len(t) > 220:
+        return False
+    return bool(re.search(
+        r"\b(?:codigo\s+de\s+vestimenta|vestimenta|dress\s*code|bermudas?|"
+        r"chanclas?|sandalias?|shorts?|pantaloneta)\b",
+        t,
+    ))
+
+
 def _pide_plano_espacio(texto: str) -> bool:
     """Detecta pedidos explícitos del plano/mapa del salón."""
     t = (texto or "").lower()
@@ -451,6 +462,8 @@ def _asegurar_escalacion_humana(
     if _es_pedido_info_general_sin_equipo(mensaje_cliente):
         return False
     if _es_pedido_asesor_generico_sin_equipo(mensaje_cliente):
+        return False
+    if _es_pregunta_vestimenta_sin_equipo(mensaje_cliente):
         return False
     if any(item.get("clase") == "escalacion" for item in outbox):
         return False

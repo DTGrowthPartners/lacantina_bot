@@ -132,6 +132,8 @@ def _telefono_canonico_equipo(raw: str) -> str:
     digitos = re.sub(r"\D+", "", raw or "")
     if not digitos:
         return ""
+    if len(digitos) > 12 and not digitos.startswith("57"):
+        return f"{digitos}@lid"
     if digitos.startswith("00"):
         digitos = digitos[2:]
     if digitos.startswith("57") and len(digitos) >= 12:
@@ -143,10 +145,10 @@ def _telefono_canonico_equipo(raw: str) -> str:
 
 def _cliente_objetivo_desde_alerta_citada(texto: str) -> dict | None:
     """Extrae el cliente correcto de una alerta del bot citada por el equipo."""
-    if not texto or "Cliente:" not in texto:
+    if not texto or not re.search(r"\b(?:Cliente|Número|Numero):", texto, flags=re.I):
         return None
     match_tel = re.search(
-        r"Cliente:\s*((?:\d{8,}@lid)|(?:\+?\d[\d\s().-]{7,}))",
+        r"(?:Cliente|Número|Numero):\s*((?:\d{8,}@lid)|(?:\+?\d[\d\s().-]{7,}))",
         texto,
         flags=re.I,
     )

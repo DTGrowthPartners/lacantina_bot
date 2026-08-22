@@ -60,6 +60,10 @@ Preguntas que llegan TODOS los días al chat. Usa estas como referencia de
 > [TODO: confirmar con Fabio. Probable: 18 años. Mientras tanto: *"Te
 > confirmo con el equipo — escríbenos cuando quieras venir y te decimos.")*]
 
+## ¿Hay código de vestimenta? ¿Puedo entrar en bermudas o chanclas?
+> *Puedes venir en bermuda si vienes presentable. Lo que no permitimos es el
+> ingreso en chanclas.*
+
 ## ¿Aceptan grupos corporativos / eventos privados?
 > *Por eso normalmente coordina Fabio directo. Te paso al equipo para que
 > te confirmen.* → escalar con `escalar_a_equipo(tipo="evento_privado", ...)`.

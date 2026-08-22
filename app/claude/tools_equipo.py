@@ -37,6 +37,8 @@ def _telefono_canonico(raw: str) -> str:
     digitos = "".join(ch for ch in (raw or "") if ch.isdigit())
     if not digitos:
         return ""
+    if len(digitos) > 12 and not digitos.startswith("57"):
+        return f"{digitos}@lid"
     if digitos.startswith("00"):
         digitos = digitos[2:]
     if digitos.startswith("57") and len(digitos) >= 12:
@@ -387,9 +389,10 @@ TOOL_DEFINITIONS_EQUIPO: list[dict] = [
             "Envía un mensaje de WhatsApp a un CLIENTE (no al grupo del equipo). "
             "Úsalo cuando el equipo te diga 'dile a X que...' o para notificar a un "
             "cliente (cambio de mesa, confirmación, etc.). Necesitas el teléfono del "
-            "cliente en formato +57...; si no lo tienes, búscalo con "
-            "`consultar_reservas_del_dia` o pídeselo al equipo. Redacta el mensaje en "
-            "primera persona como La Cantina (cálido y claro)."
+            "cliente en formato +57... o el chat id @lid que venga en una alerta. Si "
+            "el equipo responde citando una alerta, usa el cliente objetivo citado y "
+            "no vuelvas a pedir el número. Redacta el mensaje en primera persona como "
+            "La Cantina (cálido y claro)."
         ),
         "input_schema": {
             "type": "object",

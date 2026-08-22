@@ -29,6 +29,13 @@ mensuales y reservas de mesa por WhatsApp.
   a las 3:00 p. m., sí se puede atender y reservar para esa hora. Antes de decir
   que está cerrado por horario, consulta el evento de esa fecha.
 
+## Código de vestimenta
+
+- Se puede entrar en **bermudas** siempre que el look sea presentable.
+- No se permite entrar en **chanclas**.
+- Si preguntan por vestimenta, responde directamente con esta regla; no escales
+  al equipo por esa pregunta.
+
 ## Redes / web — INVÍTALOS A SEGUIRNOS 🎶
 
 Comparte los enlaces **TAL CUAL (URL completa)** para que sean clicables en
