@@ -222,15 +222,69 @@ def _cancelacion_reserva_es_clara(ctx: dict) -> bool:
     if not texto:
         return False
 
+    if texto in {"hay que cancelar", "toca cancelar", "donde cancelo", "como cancelo"}:
+        return False
     if texto in {"cancelar", "cancelo", "cancelala", "cancelarla"}:
         return True
 
+    textos = []
+    for item in ctx.get("historial_cliente_reciente") or []:
+        if isinstance(item, dict) and item.get("direccion") == "inbound" and item.get("contenido"):
+            textos.append(str(item.get("contenido") or ""))
+    textos.append(ctx.get("mensaje_actual_cliente") or "")
+    contexto = _texto_cliente_simple(" ".join(textos[-4:]))
+
     verbo_cancelar = r"(?:cancelar|cancela|cancelame|cancelamela|cancelo|anular|anula|borrar|borra|eliminar|elimina)"
-    objeto_reserva = r"(?:reserva|reservacion|mesa|apartado)"
-    if re.search(rf"\b{verbo_cancelar}\b.{{0,50}}\b{objeto_reserva}\b", texto):
+    verbo_cancelado = r"(?:cancelad[ao]s?|eliminad[ao]s?|borrad[ao]s?|anulad[ao]s?)"
+    objeto_reserva = r"(?:reserva|reservacion|mesa|apartado|la\s+\d{1,2})"
+    if re.search(rf"\b{verbo_cancelar}\b.{{0,60}}\b{objeto_reserva}\b", contexto):
         return True
-    if re.search(rf"\b{objeto_reserva}\b.{{0,50}}\b{verbo_cancelar}\b", texto):
+    if re.search(rf"\b{objeto_reserva}\b.{{0,60}}\b(?:{verbo_cancelar}|{verbo_cancelado})\b", contexto):
         return True
+    if re.search(rf"\b{verbo_cancelar}\b.{{0,60}}\b(?:mesa\s*)?#?\d{{1,2}}\b", contexto):
+        return True
+    return False
+
+
+def _mesa_cancelacion_desde_contexto(args: dict, ctx: dict) -> int | None:
+    for key in ("mesa_numero", "mesa_id", "mesa"):
+        raw = args.get(key)
+        if raw is not None and str(raw).isdigit():
+            return int(raw)
+
+    textos: list[str] = []
+    for item in ctx.get("historial_cliente_reciente") or []:
+        if isinstance(item, dict) and item.get("direccion") == "inbound" and item.get("contenido"):
+            textos.append(str(item.get("contenido") or ""))
+    textos.append(ctx.get("mensaje_actual_cliente") or "")
+    contexto = _texto_cliente_simple(" ".join(textos[-4:]))
+    for patron in (
+        r"\b(?:eliminar|elimina|cancelar|cancela|borrar|borra|anular|anula)\b.{0,30}\b(?:mesa\s*)?#?(\d{1,2})\b",
+        r"\bmesa\s*#?\s*(\d{1,2})\b",
+        r"\bla\s+(\d{1,2})\b",
+    ):
+        matches = list(re.finditer(patron, contexto))
+        if matches:
+            return int(matches[-1].group(1))
+    return None
+
+
+def _reserva_incluye_mesa(reserva: dict, mesa_numero: int) -> bool:
+    valores = [
+        reserva.get("mesa_numero"),
+        reserva.get("mesa_id"),
+        *(reserva.get("grupo_mesas") or []),
+        *(reserva.get("mesa_numeros") or []),
+        *(reserva.get("mesas") or []),
+    ]
+    for valor in valores:
+        if isinstance(valor, dict):
+            valor = valor.get("numero") or valor.get("mesa_numero") or valor.get("id")
+        try:
+            if int(valor) == int(mesa_numero):
+                return True
+        except (TypeError, ValueError):
+            continue
     return False
 
 
@@ -858,6 +912,10 @@ TOOL_DEFINITIONS: list[dict] = [
                 "reserva_id": {
                     "type": "integer",
                     "description": "Opcional; nunca se lo pidas si no lo dio.",
+                },
+                "mesa_numero": {
+                    "type": "integer",
+                    "description": "Opcional; úsalo si el cliente dijo qué mesa quiere cancelar.",
                 },
             },
         },
@@ -1526,14 +1584,27 @@ async def handler_cancelar_reserva_cliente(args: dict, ctx: dict) -> dict:
         reservas = [r for r in reservas if r.get("id") == args["reserva_id"]]
     if args.get("fecha"):
         reservas = [r for r in reservas if r.get("fecha") == args["fecha"]]
+    mesa_numero = _mesa_cancelacion_desde_contexto(args, ctx)
+    if mesa_numero:
+        reservas = [r for r in reservas if _reserva_incluye_mesa(r, mesa_numero)]
     if not reservas:
         return {"ok": False, "error": "No encontré una reserva activa tuya con esos datos."}
     if len(reservas) > 1:
+        if mesa_numero:
+            return {
+                "ok": False,
+                "requiere_aclaracion": True,
+                "mesa_numero": mesa_numero,
+                "error": (
+                    f"Encontré más de una reserva con la mesa {mesa_numero}. "
+                    "Pregunta cuál desea cancelar o pide que confirme el ID mostrado."
+                ),
+            }
         return {
             "ok": False,
             "requiere_fecha": True,
             "fechas": sorted({r.get("fecha") for r in reservas if r.get("fecha")}),
-            "error": "Hay varias reservas. Pregunta únicamente cuál fecha desea cancelar.",
+            "error": "Hay varias reservas. Pregunta únicamente cuál fecha o cuál mesa desea cancelar.",
         }
 
     reserva = reservas[0]

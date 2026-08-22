@@ -864,6 +864,51 @@ class CancelacionClienteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("¿Estás seguro", resultado["pregunta"])
         cancelar.assert_not_awaited()
 
+    async def test_pide_confirmacion_para_cancelacion_partida_por_mesa(self):
+        reserva_grupo = {
+            "id": 308,
+            "fecha": "2026-08-22",
+            "mesa_id": 15,
+            "mesa_numero": 15,
+            "grupo_mesas": [15, 16],
+            "nombre_cliente": "Carlos Mario Giraldo",
+            "telefono": "+573044495562",
+            "num_personas": 8,
+            "estado": "confirmada",
+            "tipo_reserva": "grupo",
+            "grupo_id": "g_a8bb8687",
+        }
+        ctx = {
+            "cliente_numero": "+573044495562",
+            "intent": "cancelar_reserva",
+            "mensaje_actual_cliente": "La mesa 5",
+            "historial_cliente_reciente": [
+                {"direccion": "inbound", "contenido": "Solo seria la mesa 15 y 16"},
+                {"direccion": "inbound", "contenido": "Eliminar"},
+            ],
+            "outbox": [],
+        }
+        with (
+            patch.object(
+                tools.cantina_api,
+                "reservas_cliente",
+                new=AsyncMock(return_value={
+                    "ok": True,
+                    "reservas": [self.reserva, reserva_grupo],
+                }),
+            ),
+            patch.object(tools.cantina_api, "cancelar_reserva", new=AsyncMock()) as cancelar,
+        ):
+            resultado = await tools.handler_cancelar_reserva_cliente(
+                {"fecha": "2026-08-22"},
+                ctx,
+            )
+
+        self.assertTrue(resultado["requiere_confirmacion_cancelacion"])
+        self.assertEqual(resultado["reserva_id"], 303)
+        self.assertIn("mesa 5", resultado["pregunta"])
+        cancelar.assert_not_awaited()
+
     def test_detecta_respuesta_si_no_para_cancelacion_pendiente(self):
         self.assertEqual(_respuesta_confirmacion_cancelacion("sí, cancélala"), "si")
         self.assertEqual(_respuesta_confirmacion_cancelacion("no la canceles"), "no")

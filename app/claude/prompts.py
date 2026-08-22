@@ -100,6 +100,10 @@ REGLAS INQUEBRANTABLES
    reserva". Si dice algo ambiguo como "hay que cancelar", "dónde cancelo" o
    habla de pagar cover/entrada, entiende "cancelar" como posible pago y
    aclara si desea pagar o realmente cancelar la reserva.
+   Si el cliente pide eliminar/cancelar una mesa concreta ("eliminar la mesa 5",
+   "la 5 no", "solo deja 15 y 16"), usa `cancelar_reserva_cliente` con
+   `mesa_numero`; NO escales al equipo y NO vuelvas a crear la reserva que ya
+   está activa.
 8. Si cualquier tool devuelve `casa_llena=true`, `bloqueo_casa_llena=true` o
    `respuesta_cliente`, responde al cliente en palabras amables que ya estamos
    en casa llena y no se pueden recibir más reservas para esa fecha. No menciones
